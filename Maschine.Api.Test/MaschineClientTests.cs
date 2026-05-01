@@ -685,14 +685,14 @@ public sealed class MaschineClientTests
 		var bottom = device.WrittenReports[^1];
 		top.Length.Should().Be(265);
 		bottom.Length.Should().Be(265);
-		top[9 + 0].Should().Be(0x55);
-		top[9 + 1].Should().Be(0x55);
-		top[9 + 2].Should().Be(0x55);
-		top[9 + 3].Should().Be(0x55);
-		top[9 + 4].Should().Be(0x55);
-		top[9 + 5].Should().Be(0x55);
-		top[9 + 6].Should().Be(0x55);
-		top[9 + 7].Should().Be(0x55);
+		top[9 + 0].Should().Be(0x03);
+		top[9 + 1].Should().Be(0x06);
+		top[9 + 2].Should().Be(0x0C);
+		top[9 + 3].Should().Be(0x18);
+		top[9 + 4].Should().Be(0x30);
+		top[9 + 5].Should().Be(0x60);
+		top[9 + 6].Should().Be(0xC0);
+		top[9 + 7].Should().Be(0x81);
 		bottom[9 + 0].Should().Be(top[9 + 0]);
 		bottom[9 + 7].Should().Be(top[9 + 7]);
 
@@ -710,9 +710,9 @@ public sealed class MaschineClientTests
 		await client.SetDotMatrixZebraLinesAsync(3);
 
 		var top = device.WrittenReports[^2];
-		top[9 + 0].Should().Be(0xAA);
-		top[9 + 1].Should().Be(0xAA);
-		top[9 + 2].Should().Be(0xAA);
+		top[9 + 0].Should().Be(0x18);
+		top[9 + 1].Should().Be(0x30);
+		top[9 + 2].Should().Be(0x60);
 
 
 		await client.DisconnectAsync();

@@ -56,12 +56,12 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 	{
 		var top = new byte[PixelCountPerSection];
 		var bottom = new byte[PixelCountPerSection];
-		var shift = phase & 7;
 
 		for (var i = 0; i < PixelCountPerSection; i++)
 		{
-			// True 50/50 stripe duty: 01010101 shifted by phase for animation.
-			var value = RotateRight((byte)0x55, shift);
+			// Two-bit diagonal slash that can be shifted via phase for animation.
+			var bit = (i + phase) & 7;
+			var value = (byte)((1 << bit) | (1 << ((bit + 1) & 7)));
 			top[i] = value;
 			bottom[i] = value;
 		}
@@ -102,16 +102,5 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		Buffer.BlockCopy(header, 0, packet, 0, header.Length);
 		Buffer.BlockCopy(pixels, 0, packet, header.Length, pixels.Length);
 		return packet;
-	}
-
-	private static byte RotateRight(byte value, int shift)
-	{
-		shift &= 7;
-		if (shift == 0)
-		{
-			return value;
-		}
-
-		return (byte)((value >> shift) | (value << (8 - shift)));
 	}
 }
