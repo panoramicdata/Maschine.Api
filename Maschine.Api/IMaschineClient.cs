@@ -26,4 +26,19 @@ public interface IMaschineClient : IDisposable
 	/// Stops the background read loop and releases the HID device.
 	/// </summary>
 	Task DisconnectAsync();
+
+	/// <summary>
+	/// Experimental: writes a simple top/bottom test pattern to the Mikro MK3 dot-matrix display.
+	/// </summary>
+	Task SetDotMatrixTestPatternAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Experimental: clears the Mikro MK3 dot-matrix display sections.
+	/// </summary>
+	Task ClearDotMatrixAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Experimental: writes a zebra-line pattern to the Mikro MK3 dot-matrix display.
+	/// </summary>
+	Task SetDotMatrixZebraLinesAsync(int phase = 0, CancellationToken cancellationToken = default);
 }

@@ -624,4 +624,98 @@ public sealed class MaschineClientTests
 		await client.DisconnectAsync();
 		client.Dispose();
 	}
+
+	[Fact]
+	public async Task SetDotMatrixTestPatternAsync_WritesTwoDisplayPackets()
+	{
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		await client.SetDotMatrixTestPatternAsync();
+
+		device.WrittenReports.Should().Contain(r => r.Length == 265 && r[0] == 0xE0);
+		device.WrittenReports.Should().HaveCountGreaterThanOrEqualTo(2);
+		device.WrittenReports[^2][0].Should().Be(0xE0);
+		device.WrittenReports[^1][0].Should().Be(0xE0);
+
+		await client.DisconnectAsync();
+		client.Dispose();
+	}
+
+	[Fact]
+	public async Task ClearDotMatrixAsync_WritesZeroedPixelPayloads()
+	{
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		await client.ClearDotMatrixAsync();
+
+		var top = device.WrittenReports[^2];
+		var bottom = device.WrittenReports[^1];
+		top.Length.Should().Be(265);
+		bottom.Length.Should().Be(265);
+		top[0].Should().Be(0xE0);
+		bottom[0].Should().Be(0xE0);
+		for (var i = 9; i < top.Length; i++)
+		{
+			top[i].Should().Be(0);
+		}
+
+		for (var i = 9; i < bottom.Length; i++)
+		{
+			bottom[i].Should().Be(0);
+		}
+
+		await client.DisconnectAsync();
+		client.Dispose();
+	}
+
+	[Fact]
+	public async Task SetDotMatrixZebraLinesAsync_WritesAlternatingStripePattern()
+	{
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		await client.SetDotMatrixZebraLinesAsync();
+
+		var top = device.WrittenReports[^2];
+		var bottom = device.WrittenReports[^1];
+		top.Length.Should().Be(265);
+		bottom.Length.Should().Be(265);
+		top[9 + 0].Should().Be(0x55);
+		top[9 + 1].Should().Be(0x55);
+		top[9 + 2].Should().Be(0x55);
+		top[9 + 3].Should().Be(0x55);
+		top[9 + 4].Should().Be(0x55);
+		top[9 + 5].Should().Be(0x55);
+		top[9 + 6].Should().Be(0x55);
+		top[9 + 7].Should().Be(0x55);
+		bottom[9 + 0].Should().Be(top[9 + 0]);
+		bottom[9 + 7].Should().Be(top[9 + 7]);
+
+		await client.DisconnectAsync();
+		client.Dispose();
+	}
+
+	[Fact]
+	public async Task SetDotMatrixZebraLinesAsync_WithPhase_ShiftsPattern()
+	{
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		await client.SetDotMatrixZebraLinesAsync(3);
+
+		var top = device.WrittenReports[^2];
+		top[9 + 0].Should().Be(0xAA);
+		top[9 + 1].Should().Be(0xAA);
+		top[9 + 2].Should().Be(0xAA);
+
+
+		await client.DisconnectAsync();
+		client.Dispose();
+	}
 }

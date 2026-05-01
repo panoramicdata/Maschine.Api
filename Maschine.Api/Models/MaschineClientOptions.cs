@@ -17,4 +17,10 @@ public sealed class MaschineClientOptions
 	/// Zero-based index when multiple matching devices are connected. Defaults to 0.
 	/// </summary>
 	public int DeviceIndex { get; set; }
+
+	/// <summary>
+	/// Forces output writes to use the unified 0x80 light packet path instead of legacy split reports.
+	/// Enable this on devices where legacy reports are accepted but LEDs do not visibly update.
+	/// </summary>
+	public bool ForceUnifiedLightOutput { get; set; }
 }

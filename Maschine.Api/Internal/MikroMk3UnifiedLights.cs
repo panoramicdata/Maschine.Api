@@ -192,7 +192,8 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 
 		if (r == g && g == b)
 		{
-			return (byte)((0xFF << 2) | (bright & 0x3));
+			// Grayscale is encoded as hue 0 plus brightness in the low 2 bits.
+			return (byte)(bright & 0x3);
 		}
 
 		var max = Math.Max(r, Math.Max(g, b));
@@ -222,7 +223,8 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 			h += 255;
 		}
 
-		var hue = (byte)((h / 16) + 1);
+		// The unified pad payload stores hue in the upper 6 bits.
+		var hue = (byte)Math.Clamp(h >> 2, 0, 63);
 		return (byte)((hue << 2) | (bright & 0x3));
 	}
 }

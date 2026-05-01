@@ -45,13 +45,22 @@ internal sealed class MaschinePads : IPads
 	/// <inheritdoc/>
 	public async Task SetColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken = default)
 	{
+		var report = MikroMk3Protocol.BuildSinglePadColorReport(padIndex, color);
+
 		if (_unifiedLights.IsEnabled)
 		{
-			await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
-			return;
+			try
+			{
+				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
+				return;
+			}
+			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+			{
+				await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
+				return;
+			}
 		}
 
-		var report = MikroMk3Protocol.BuildSinglePadColorReport(padIndex, color);
 		try
 		{
 			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
@@ -66,13 +75,22 @@ internal sealed class MaschinePads : IPads
 	/// <inheritdoc/>
 	public async Task SetAllColorsAsync(PadColor color, CancellationToken cancellationToken = default)
 	{
+		var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
+
 		if (_unifiedLights.IsEnabled)
 		{
-			await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
-			return;
+			try
+			{
+				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
+				return;
+			}
+			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+			{
+				await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
+				return;
+			}
 		}
 
-		var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
 		try
 		{
 			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);

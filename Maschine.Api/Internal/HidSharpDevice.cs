@@ -11,6 +11,7 @@ namespace Maschine.Api.Internal;
 internal sealed class HidSharpDevice : IHidDevice
 {
 	private readonly HidStream _stream;
+	private readonly SemaphoreSlim _writeGate = new(1, 1);
 	private bool _disposed;
 
 	/// <inheritdoc/>
@@ -46,7 +47,15 @@ internal sealed class HidSharpDevice : IHidDevice
 	public async Task WriteAsync(byte[] data, CancellationToken cancellationToken)
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
-		await _stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			await _stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_writeGate.Release();
+		}
 	}
 
 	/// <inheritdoc/>
@@ -63,8 +72,20 @@ internal sealed class HidSharpDevice : IHidDevice
 			data = sized;
 		}
 
-		_stream.SetFeature(data);
-		return Task.CompletedTask;
+		return WriteFeatureCoreAsync(data, cancellationToken);
+	}
+
+	private async Task WriteFeatureCoreAsync(byte[] data, CancellationToken cancellationToken)
+	{
+		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			_stream.SetFeature(data);
+		}
+		finally
+		{
+			_writeGate.Release();
+		}
 	}
 
 	/// <inheritdoc/>
@@ -75,6 +96,7 @@ internal sealed class HidSharpDevice : IHidDevice
 			return;
 		}
 
+		_writeGate.Dispose();
 		_stream.Dispose();
 		_disposed = true;
 	}

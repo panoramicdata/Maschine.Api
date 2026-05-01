@@ -37,6 +37,7 @@ private MaschinePads? _pads;
 private MaschineButtons? _buttons;
 private MaschineEncoders? _encoders;
 private MikroMk3UnifiedLights? _unifiedLights;
+private MikroMk3DotMatrixDisplay? _dotMatrixDisplay;
 private CancellationTokenSource? _readLoopCts;
 private Task? _readLoop;
 private bool _disposed;
@@ -99,8 +100,14 @@ _device = _factory.TryOpen(_options.VendorId, _options.ProductId, _options.Devic
 ?? throw new MaschineDeviceNotFoundException(_options.VendorId, _options.ProductId);
 
 		_unifiedLights = new MikroMk3UnifiedLights(_device);
+		if (_options.ForceUnifiedLightOutput)
+		{
+			_unifiedLights.Enable();
+		}
+
 		_pads = new MaschinePads(_device, _unifiedLights);
 		_buttons = new MaschineButtons(_device, _unifiedLights);
+_dotMatrixDisplay = new MikroMk3DotMatrixDisplay(_device);
 _encoders = new MaschineEncoders();
 
 _readLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -114,27 +121,57 @@ return Task.CompletedTask;
 /// <inheritdoc/>
 public async Task DisconnectAsync()
 {
+		// Best-effort visual cleanup so the controller is left dark on shutdown.
+		try
+		{
+			if (_pads is not null && _buttons is not null)
+			{
+				await _pads.SetAllColorsAsync(PadColor.Off, CancellationToken.None).ConfigureAwait(false);
+				await _buttons.SetAllLedsAsync(0, CancellationToken.None).ConfigureAwait(false);
+			}
+
+			if (_dotMatrixDisplay is not null)
+			{
+				await _dotMatrixDisplay.ClearAsync(CancellationToken.None).ConfigureAwait(false);
+			}
+		}
+		catch
+		{
+			// Ignore cleanup failures during disconnect.
+		}
+
 if (_readLoopCts is not null)
 {
 await _readLoopCts.CancelAsync().ConfigureAwait(false);
 }
 
+// Dispose the device before awaiting the read loop so a blocking HID read is interrupted.
+_device?.Dispose();
+_device = null;
+
 if (_readLoop is not null)
 {
 try
 {
-await _readLoop.ConfigureAwait(false);
+await _readLoop.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 }
 catch (OperationCanceledException)
 {
 // Expected on disconnect.
 }
+catch (TimeoutException)
+{
+// Some HID backends can ignore cancellation while blocked; continue shutdown.
+}
 }
 
-_device?.Dispose();
-_device = null;
 _unifiedLights?.Dispose();
 _unifiedLights = null;
+_dotMatrixDisplay?.Dispose();
+_dotMatrixDisplay = null;
+		_pads = null;
+		_buttons = null;
+		_encoders = null;
 MaschineClientLog.Disconnected(_logger);
 }
 
@@ -151,7 +188,20 @@ _readLoopCts?.Cancel();
 _readLoopCts?.Dispose();
 _device?.Dispose();
 _unifiedLights?.Dispose();
+_dotMatrixDisplay?.Dispose();
 }
+
+/// <inheritdoc/>
+public Task SetDotMatrixTestPatternAsync(CancellationToken cancellationToken = default)
+	=> EnsureConnected(_dotMatrixDisplay).SetTestPatternAsync(cancellationToken);
+
+/// <inheritdoc/>
+public Task ClearDotMatrixAsync(CancellationToken cancellationToken = default)
+	=> EnsureConnected(_dotMatrixDisplay).ClearAsync(cancellationToken);
+
+/// <inheritdoc/>
+public Task SetDotMatrixZebraLinesAsync(int phase = 0, CancellationToken cancellationToken = default)
+	=> EnsureConnected(_dotMatrixDisplay).SetZebraLinesAsync(phase, cancellationToken);
 
 // Private
 
