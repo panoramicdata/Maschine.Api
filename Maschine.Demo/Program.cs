@@ -18,6 +18,10 @@ var runLedSelfTest = args.Any(a =>
 	a.Equals("--led-test", StringComparison.OrdinalIgnoreCase)
 	|| a.Equals("--self-test", StringComparison.OrdinalIgnoreCase));
 
+var runFullBrightness = args.Any(a =>
+	a.Equals("--full-brightness", StringComparison.OrdinalIgnoreCase)
+	|| a.Equals("--all-bright", StringComparison.OrdinalIgnoreCase));
+
 try
 {
 	if (runLedSelfTest)
@@ -25,7 +29,12 @@ try
 		Console.WriteLine("LED self-test mode enabled.");
 	}
 
-	await demo.RunAsync(cts.Token, runLedSelfTest);
+	if (runFullBrightness)
+	{
+		Console.WriteLine("Full-brightness mode enabled.");
+	}
+
+	await demo.RunAsync(cts.Token, runLedSelfTest, runFullBrightness);
 }
 catch (MaschineDeviceNotFoundException)
 {

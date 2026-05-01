@@ -73,7 +73,10 @@ internal sealed class DemoController : IAsyncDisposable
 
 	// ── Public API ──────────────────────────────────────────────────────────
 
-	internal async Task RunAsync(CancellationToken cancellationToken, bool runLedSelfTest = false)
+	internal async Task RunAsync(
+		CancellationToken cancellationToken,
+		bool runLedSelfTest = false,
+		bool runFullBrightness = false)
 	{
 		PrintMappings();
 
@@ -83,10 +86,13 @@ internal sealed class DemoController : IAsyncDisposable
 		_pads = _client.Pads;
 		_encoders = _client.Encoders;
 
-		_buttons.ButtonChanged += OnButtonChanged;
-		_pads.PadChanged += OnPadChanged;
-		_encoders.EncoderChanged += OnEncoderChanged;
-		_subscribed = true;
+		if (!runFullBrightness)
+		{
+			_buttons.ButtonChanged += OnButtonChanged;
+			_pads.PadChanged += OnPadChanged;
+			_encoders.EncoderChanged += OnEncoderChanged;
+			_subscribed = true;
+		}
 
 		Console.WriteLine("\nDevice connected.  Press Ctrl+C to exit.\n");
 
@@ -96,6 +102,13 @@ internal sealed class DemoController : IAsyncDisposable
 		if (runLedSelfTest)
 		{
 			await RunLedSelfTestAsync(cancellationToken).ConfigureAwait(false);
+		}
+
+		if (runFullBrightness)
+		{
+			await TrySetAllLedsAsync(PadColor.White, 127, "full-brightness", cancellationToken)
+				.ConfigureAwait(false);
+			Console.WriteLine("All pads/buttons set to full brightness (interactive mappings disabled).");
 		}
 
 		try
