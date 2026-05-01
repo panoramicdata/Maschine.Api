@@ -6,6 +6,33 @@ using System.Threading;
 
 using var cts = new CancellationTokenSource();
 var cancelPressCount = 0;
+var shutdownBlankInvoked = 0;
+
+var options = new MaschineClientOptions();
+using var client = new MaschineClient(options);
+await using var demo = new DemoController(client);
+
+void TryBlankSurface()
+{
+	if (Interlocked.Exchange(ref shutdownBlankInvoked, 1) != 0)
+	{
+		return;
+	}
+
+	try
+	{
+		client.ClearDotMatrixAsync(CancellationToken.None).GetAwaiter().GetResult();
+		client.Pads.SetAllColorsAsync(PadColor.Off, CancellationToken.None).GetAwaiter().GetResult();
+		client.Buttons.SetAllLedsAsync(0, CancellationToken.None).GetAwaiter().GetResult();
+	}
+	catch
+	{
+		// Device may already be disconnected or not yet connected.
+	}
+}
+
+AppDomain.CurrentDomain.ProcessExit += (_, _) => TryBlankSurface();
+
 Console.CancelKeyPress += (_, e) =>
 {
 	e.Cancel = true;
@@ -13,16 +40,15 @@ Console.CancelKeyPress += (_, e) =>
 	{
 		Console.WriteLine("Ctrl+C received, shutting down...");
 		cts.Cancel();
+		Thread.Sleep(180);
+		TryBlankSurface();
+
 		return;
 	}
 
 	Console.WriteLine("Force exit requested.");
 	Environment.Exit(130);
 };
-
-var options = new MaschineClientOptions();
-using var client = new MaschineClient(options);
-await using var demo = new DemoController(client);
 
 var runLedSelfTest = args.Any(a =>
 	a.Equals("--led-test", StringComparison.OrdinalIgnoreCase)
@@ -83,6 +109,10 @@ catch (Exception ex)
 {
 	Console.Error.WriteLine($"Unexpected error: {ex.Message}");
 	return 1;
+}
+finally
+{
+	TryBlankSurface();
 }
 
 return 0;
