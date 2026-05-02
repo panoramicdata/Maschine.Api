@@ -43,6 +43,17 @@ Console.CancelKeyPress += (_, e) =>
 		Thread.Sleep(180);
 		TryBlankSurface();
 
+		try
+		{
+			client.DisconnectAsync().GetAwaiter().GetResult();
+		}
+		catch
+		{
+			// Continue to process exit.
+		}
+
+		Environment.Exit(0);
+
 		return;
 	}
 
