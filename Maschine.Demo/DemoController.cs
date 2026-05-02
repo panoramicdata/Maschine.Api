@@ -8,13 +8,14 @@ namespace Maschine.Demo;
 /// Reactive demo for Maschine Mikro MK3.
 ///
 /// Interactions:
-///   Button press   → toggle that button LED on/off with a short fade
+///   Button press   → cycle that button LED through 3 brightness levels
 ///   Pad hit        → play a random colour/effect on that pad
 ///   Encoder turn   → logs movement and updates the touch-strip LED meter
 /// </summary>
 internal sealed class DemoController : IAsyncDisposable
 {
 	private static readonly int[] s_touchStripLedButtons = [36, 37, 38, 39, 40, 41, 42, 43, 44];
+	private static readonly byte[] s_buttonBrightnessCycle = [0, 64, 127];
 
 	// ── Hue palette (12 evenly-spaced rainbow colours) ─────────────────────
 
@@ -49,10 +50,8 @@ internal sealed class DemoController : IAsyncDisposable
 
 	private readonly int[] _padHueIndex;      // current hue index (0-11) per pad
 	private readonly byte[] _buttonBrightness; // current brightness per button
-	private readonly bool[] _buttonOn;
 	private readonly bool[] _padDown;
 	private readonly DateTime[] _padLastTriggerUtc;
-	private readonly int[] _buttonAnimationGeneration;
 	private readonly int[] _padAnimationGeneration;
 	private readonly DateTime[] _lastEncoderLogUtc;
 	private readonly SemaphoreSlim _touchStripUpdateGate = new(1, 1);
@@ -81,10 +80,8 @@ internal sealed class DemoController : IAsyncDisposable
 
 		_padHueIndex = new int[MaschineDeviceConstants.MikroMk3PadCount];
 		_buttonBrightness = new byte[MaschineDeviceConstants.MikroMk3ButtonCount];
-		_buttonOn = new bool[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_padDown = new bool[MaschineDeviceConstants.MikroMk3PadCount];
 		_padLastTriggerUtc = new DateTime[MaschineDeviceConstants.MikroMk3PadCount];
-		_buttonAnimationGeneration = new int[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_padAnimationGeneration = new int[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastEncoderLogUtc = new DateTime[MaschineDeviceConstants.MikroMk3EncoderCount];
 	}
@@ -95,6 +92,7 @@ internal sealed class DemoController : IAsyncDisposable
 		CancellationToken cancellationToken,
 		bool runLedSelfTest = false,
 		bool runFullBrightness = false,
+		bool runPadColorSpace = false,
 		bool runDisplayTest = false,
 		bool runDisplayZebra = false,
 		bool runDisplayZebraAnimate = false)
@@ -107,7 +105,7 @@ internal sealed class DemoController : IAsyncDisposable
 		_pads = _client.Pads;
 		_encoders = _client.Encoders;
 
-		if (!runFullBrightness)
+		if (!runFullBrightness && !runPadColorSpace)
 		{
 			_buttons.ButtonChanged += OnButtonChanged;
 			_pads.PadChanged += OnPadChanged;
@@ -119,7 +117,14 @@ internal sealed class DemoController : IAsyncDisposable
 
 		// Blank all LEDs at startup
 		await TrySetAllLedsAsync(new PadColor(0, 0, 0), 0, "startup", cancellationToken).ConfigureAwait(false);
-		await TrySetRandomPadColorsAsync(cancellationToken).ConfigureAwait(false);
+		if (runPadColorSpace)
+		{
+			await TrySetPadColorSpaceAsync(cancellationToken).ConfigureAwait(false);
+		}
+		else
+		{
+			await TrySetRandomPadColorsAsync(cancellationToken).ConfigureAwait(false);
+		}
 
 		if (runLedSelfTest)
 		{
@@ -131,6 +136,11 @@ internal sealed class DemoController : IAsyncDisposable
 			await TrySetAllLedsAsync(PadColor.White, 127, "full-brightness", cancellationToken)
 				.ConfigureAwait(false);
 			Console.WriteLine("All pads/buttons set to full brightness (interactive mappings disabled).");
+		}
+
+		if (runPadColorSpace)
+		{
+			Console.WriteLine("Pad color-space mode enabled (interactive mappings disabled).");
 		}
 
 		if (runDisplayTest)
@@ -212,17 +222,18 @@ internal sealed class DemoController : IAsyncDisposable
 			return; // act on press only
 		}
 
-		int generation;
-		bool targetOn;
+		byte nextBrightness;
 		lock (_animationSync)
 		{
-			targetOn = !_buttonOn[state.Index];
-			_buttonOn[state.Index] = targetOn;
-			generation = ++_buttonAnimationGeneration[state.Index];
+			var current = _buttonBrightness[state.Index];
+			var currentIndex = Array.IndexOf(s_buttonBrightnessCycle, current);
+			var nextIndex = (currentIndex + 1) % s_buttonBrightnessCycle.Length;
+			nextBrightness = s_buttonBrightnessCycle[nextIndex];
+			_buttonBrightness[state.Index] = nextBrightness;
 		}
 
-		Console.WriteLine($"Button {state.Index,2} pressed -> {(targetOn ? "ON" : "OFF")} (fade)");
-		_ = AnimateButtonToggleAsync(state.Index, targetOn, generation);
+		Console.WriteLine($"Button {state.Index,2} pressed -> brightness {nextBrightness}");
+		_ = TrySetButtonLedAsync(state.Index, nextBrightness);
 	}
 
 	private void OnPadChanged(object? sender, PadState state)
@@ -275,39 +286,6 @@ internal sealed class DemoController : IAsyncDisposable
 	{
 		await CancelOtherPadAnimationsAsync(padIndex).ConfigureAwait(false);
 		await AnimatePadPressAsync(padIndex, generation).ConfigureAwait(false);
-	}
-
-	private async Task AnimateButtonToggleAsync(int buttonIndex, bool targetOn, int generation)
-	{
-		byte start;
-		lock (_animationSync)
-		{
-			start = _buttonBrightness[buttonIndex];
-		}
-
-		var target = targetOn ? 127 : 0;
-		const int steps = 24;
-
-		for (var i = 1; i <= steps; i++)
-		{
-			lock (_animationSync)
-			{
-				if (_buttonAnimationGeneration[buttonIndex] != generation)
-				{
-					return;
-				}
-			}
-
-			var value = (byte)(start + ((target - start) * i / steps));
-			await TrySetButtonLedAsync(buttonIndex, value).ConfigureAwait(false);
-
-			lock (_animationSync)
-			{
-				_buttonBrightness[buttonIndex] = value;
-			}
-
-			await Task.Delay(12).ConfigureAwait(false);
-		}
 	}
 
 	private void OnEncoderChanged(object? sender, EncoderDelta delta)
@@ -600,6 +578,54 @@ internal sealed class DemoController : IAsyncDisposable
 		}
 	}
 
+	private async Task TrySetPadColorSpaceAsync(CancellationToken cancellationToken)
+	{
+		if (_pads is null)
+		{
+			return;
+		}
+
+		var palette = new[]
+		{
+			new PadColor(255, 0, 0),
+			new PadColor(255, 96, 0),
+			new PadColor(255, 180, 0),
+			new PadColor(255, 255, 0),
+			new PadColor(128, 255, 0),
+			new PadColor(0, 255, 0),
+			new PadColor(0, 255, 128),
+			new PadColor(0, 255, 255),
+			new PadColor(0, 128, 255),
+			new PadColor(0, 0, 255),
+			new PadColor(128, 0, 255),
+			new PadColor(255, 0, 255),
+			new PadColor(255, 0, 128),
+			new PadColor(255, 255, 255),
+			new PadColor(192, 192, 192),
+			new PadColor(64, 64, 64),
+		};
+
+		try
+		{
+			for (var pad = 0; pad < MaschineDeviceConstants.MikroMk3PadCount; pad++)
+			{
+				var color = palette[pad];
+				await _pads.SetColorAsync(pad, color, cancellationToken).ConfigureAwait(false);
+			}
+
+			Console.WriteLine("Pad color-space written across all 16 pads:");
+			for (var pad = 0; pad < MaschineDeviceConstants.MikroMk3PadCount; pad++)
+			{
+				var color = palette[pad];
+				Console.WriteLine($"  P{pad,2} -> {FormatColor(color)}");
+			}
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"[warn] Pad color-space write failed: {ex.Message}");
+		}
+	}
+
 	private async Task TrySetDotMatrixTestPatternAsync(CancellationToken cancellationToken)
 	{
 		try
@@ -717,7 +743,7 @@ internal sealed class DemoController : IAsyncDisposable
 		Console.WriteLine("(All mappings are fixed for seed 42)");
 		Console.WriteLine();
 		Console.WriteLine("Behavior:");
-		Console.WriteLine("  Button press -> toggles that same button LED with fade");
+		Console.WriteLine("  Button press -> cycles that same button LED brightness (instant)");
 		Console.WriteLine("  Pad press -> random effect on that same pad");
 		Console.WriteLine("  Encoder and touch fader -> log movement + animate touch-strip LEDs");
 		Console.WriteLine();

@@ -169,6 +169,36 @@ return report;
 }
 
 /// <summary>
+/// Builds a pad-LED output report from an explicit per-pad color frame.
+/// </summary>
+/// <param name="colors">Exactly 16 colors, one for each pad index.</param>
+/// <returns>A <see cref="PadLedReportLength"/>-byte output report.</returns>
+/// <exception cref="ArgumentException">Thrown when color count does not match pad count.</exception>
+internal static byte[] BuildPadColorsReport(IReadOnlyList<PadColor> colors)
+{
+ArgumentNullException.ThrowIfNull(colors);
+if (colors.Count != MaschineDeviceConstants.MikroMk3PadCount)
+{
+throw new ArgumentException(
+$"Expected {MaschineDeviceConstants.MikroMk3PadCount} pad colors, got {colors.Count}.",
+nameof(colors));
+}
+
+var report = new byte[PadLedReportLength];
+report[0] = PadLedReportId;
+for (var i = 0; i < MaschineDeviceConstants.MikroMk3PadCount; i++)
+{
+var color = colors[i];
+var offset = 1 + (i * 3);
+report[offset] = color.R;
+report[offset + 1] = color.G;
+report[offset + 2] = color.B;
+}
+
+return report;
+}
+
+/// <summary>
 /// Builds a button-LED output report that sets a single button brightness.
 /// </summary>
 /// <param name="buttonIndex">Zero-based button index (0-<see cref="MaschineDeviceConstants.MikroMk3ButtonCount"/> minus 1).</param>

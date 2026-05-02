@@ -165,11 +165,12 @@ catch (TimeoutException)
 }
 }
 
+_pads?.Dispose();
+_pads = null;
 _unifiedLights?.Dispose();
 _unifiedLights = null;
 _dotMatrixDisplay?.Dispose();
 _dotMatrixDisplay = null;
-		_pads = null;
 		_buttons = null;
 		_encoders = null;
 MaschineClientLog.Disconnected(_logger);
@@ -187,6 +188,7 @@ _disposed = true;
 _readLoopCts?.Cancel();
 _readLoopCts?.Dispose();
 _device?.Dispose();
+_pads?.Dispose();
 _unifiedLights?.Dispose();
 _dotMatrixDisplay?.Dispose();
 }

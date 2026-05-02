@@ -54,6 +54,11 @@ var runFullBrightness = args.Any(a =>
 	a.Equals("--full-brightness", StringComparison.OrdinalIgnoreCase)
 	|| a.Equals("--all-bright", StringComparison.OrdinalIgnoreCase));
 
+var runPadColorSpace = args.Any(a =>
+	a.Equals("--pad-color-space", StringComparison.OrdinalIgnoreCase)
+	|| a.Equals("--pad-colorspace", StringComparison.OrdinalIgnoreCase)
+	|| a.Equals("--pad-gamut", StringComparison.OrdinalIgnoreCase));
+
 var forceUnified = args.Any(a => a.Equals("--force-unified", StringComparison.OrdinalIgnoreCase));
 const bool runDisplayTest = false;
 const bool runDisplayZebra = false;
@@ -82,6 +87,11 @@ try
 		Console.WriteLine("Full-brightness mode enabled.");
 	}
 
+	if (runPadColorSpace)
+	{
+		Console.WriteLine("Pad color-space mode enabled.");
+	}
+
 	if (options.ForceUnifiedLightOutput)
 	{
 		Console.WriteLine("Unified light output forced.");
@@ -89,7 +99,7 @@ try
 
 	Console.WriteLine("Dot-matrix zebra animation enabled (default).");
 
-	await demo.RunAsync(cts.Token, runLedSelfTest, runFullBrightness, runDisplayTest, runDisplayZebra, runDisplayZebraAnimate);
+	await demo.RunAsync(cts.Token, runLedSelfTest, runFullBrightness, runPadColorSpace, runDisplayTest, runDisplayZebra, runDisplayZebraAnimate);
 }
 catch (OperationCanceledException) when (cts.IsCancellationRequested)
 {

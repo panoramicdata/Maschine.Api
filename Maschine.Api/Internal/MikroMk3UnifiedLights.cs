@@ -4,12 +4,14 @@ using System.Threading;
 namespace Maschine.Api.Internal;
 
 /// <summary>
-/// Maintains and writes the unified Mikro MK3 light packet format:
-/// report ID 0x80 + 80 bytes of light data.
+/// Maintains and writes the unified Mikro MK3 light packet format.
+/// Report: ID 0x80 + 90 bytes (39 buttons + 16 pads + 35 strip).
+/// Each byte: bits 0-1 = intensity (0=low, 1=med, 2=high, 3=faded);
+///            bits 2-7 = palette colour index (0=off, 1=red … 17=white).
 /// </summary>
 internal sealed class MikroMk3UnifiedLights : IDisposable
 {
-	private const int LightDataLength = 80;
+	private const int LightDataLength = 90;  // 39 buttons + 16 pads + 35 strip
 	private const int ReportLength = 1 + LightDataLength;
 	private const int FirstPadLightId = 39;
 
@@ -173,58 +175,80 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 
 	private static byte ScaleButtonBrightness(byte brightness)
 	{
-		// Legacy API brightness is 0-127; unified packet button brightness behaves as a small range.
-		return (byte)Math.Clamp(brightness / 4, 0, 31);
-	}
-
-	private static byte EncodePadColor(PadColor color)
-	{
-		var r = color.R;
-		var g = color.G;
-		var b = color.B;
-
-		if (r == 0 && g == 0 && b == 0)
+		if (brightness == 0)
 		{
 			return 0;
 		}
-
-		var bright = (byte)Math.Clamp(Math.Max(r, Math.Max(g, b)) >> 6, 0, 3);
-
-		if (r == g && g == b)
-		{
-			// Grayscale is encoded as hue 0 plus brightness in the low 2 bits.
-			return (byte)(bright & 0x3);
-		}
-
-		var max = Math.Max(r, Math.Max(g, b));
-		var min = Math.Min(r, Math.Min(g, b));
-		var delta = max - min;
-		if (delta == 0)
-		{
-			return bright;
-		}
-
-		var h = 0;
-		if (max == r)
-		{
-			h = ((g - b) * 42) / delta;
-		}
-		else if (max == g)
-		{
-			h = (((b - r) * 42) / delta) + 85;
-		}
-		else
-		{
-			h = (((r - g) * 42) / delta) + 171;
-		}
-
-		if (h < 0)
-		{
-			h += 255;
-		}
-
-		// The unified pad payload stores hue in the upper 6 bits.
-		var hue = (byte)Math.Clamp(h >> 2, 0, 63);
-		return (byte)((hue << 2) | (bright & 0x3));
+		// Map 0-127 brightness to intensity in the low 2 bits; colour index 1 in high 6 bits.
+		byte intensity = brightness >= 85 ? (byte)3 : brightness >= 43 ? (byte)2 : (byte)1;
+		return (byte)((1 << 2) | intensity);
 	}
+
+
+private static byte EncodePadColor(PadColor color)
+{
+var r = color.R;
+var g = color.G;
+var b = color.B;
+
+if (r == 0 && g == 0 && b == 0)
+{
+return 0;
+}
+
+var max = Math.Max(r, Math.Max(g, b));
+byte intensity = max >= 171 ? (byte)2 : max >= 86 ? (byte)1 : (byte)0;
+
+// Near-grayscale (low saturation) -> white (palette index 17).
+var min = Math.Min(r, Math.Min(g, b));
+var delta = max - min;
+if (delta < max / 4)
+{
+return (byte)((17 << 2) | intensity);
+}
+
+// Compute hue in degrees 0-360.
+double h;
+if (max == r)
+{
+h = 60.0 * ((double)(g - b) / delta % 6);
+}
+else if (max == g)
+{
+h = 60.0 * ((double)(b - r) / delta + 2);
+}
+else
+{
+h = 60.0 * ((double)(r - g) / delta + 4);
+}
+
+if (h < 0) h += 360;
+
+// Map hue to NI Mikro MK3 fixed palette indices 1-16.
+// 1=red, 2=orange, 3=light-orange, 4=warm-yellow, 5=yellow,
+// 6=lime, 7=green, 8=mint, 9=cyan, 10=turquoise, 11=blue,
+// 12=plum, 13=violet, 14=purple, 15=magenta, 16=fuchsia.
+byte colorIndex = h switch
+{
+< 10  => 1,
+< 25  => 2,
+< 38  => 3,
+< 52  => 4,
+< 75  => 5,
+< 105 => 6,
+< 135 => 7,
+< 165 => 8,
+< 195 => 9,
+< 225 => 10,
+< 248 => 11,
+< 263 => 12,
+< 278 => 13,
+< 293 => 14,
+< 315 => 15,
+< 350 => 16,
+_     => 1,
+};
+
+return (byte)((colorIndex << 2) | intensity);
+}
 }

@@ -7,11 +7,14 @@ namespace Maschine.Api;
 /// <summary>
 /// Manages pad state and LED colours for the Maschine Mikro MK3.
 /// </summary>
-internal sealed class MaschinePads : IPads
+internal sealed class MaschinePads : IPads, IDisposable
 {
 	private readonly IHidDevice _device;
 	private readonly MikroMk3UnifiedLights _unifiedLights;
 	private readonly PadState[] _states;
+	private readonly PadColor[] _colors;
+	private readonly SemaphoreSlim _writeGate = new(1, 1);
+	private bool _disposed;
 
 	/// <inheritdoc/>
 	public event EventHandler<PadState>? PadChanged;
@@ -21,9 +24,11 @@ internal sealed class MaschinePads : IPads
 		_device = device;
 		_unifiedLights = unifiedLights;
 		_states = new PadState[MaschineDeviceConstants.MikroMk3PadCount];
+		_colors = new PadColor[MaschineDeviceConstants.MikroMk3PadCount];
 		for (var i = 0; i < _states.Length; i++)
 		{
 			_states[i] = new PadState(i, 0);
+			_colors[i] = PadColor.Off;
 		}
 	}
 
@@ -45,61 +50,83 @@ internal sealed class MaschinePads : IPads
 	/// <inheritdoc/>
 	public async Task SetColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken = default)
 	{
-		var report = MikroMk3Protocol.BuildSinglePadColorReport(padIndex, color);
-
-		if (_unifiedLights.IsEnabled)
+		if (padIndex < 0 || padIndex >= MaschineDeviceConstants.MikroMk3PadCount)
 		{
-			try
-			{
-				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
-				return;
-			}
-			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+			throw new ArgumentOutOfRangeException(nameof(padIndex), padIndex,
+				$"Pad index must be 0–{MaschineDeviceConstants.MikroMk3PadCount - 1}.");
+		}
+
+		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			_colors[padIndex] = color;
+
+			if (_unifiedLights.IsEnabled)
 			{
 				await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
 				return;
 			}
-		}
 
-		try
-		{
-			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
+			var report = MikroMk3Protocol.BuildPadColorsReport(_colors);
+			try
+			{
+				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
+			}
+			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+			{
+				_unifiedLights.Enable();
+				await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
+			}
 		}
-		catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+		finally
 		{
-			_unifiedLights.Enable();
-			await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
+			_writeGate.Release();
 		}
 	}
 
 	/// <inheritdoc/>
 	public async Task SetAllColorsAsync(PadColor color, CancellationToken cancellationToken = default)
 	{
-		var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
-
-		if (_unifiedLights.IsEnabled)
+		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
 		{
-			try
+			for (var i = 0; i < _colors.Length; i++)
 			{
-				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
-				return;
+				_colors[i] = color;
 			}
-			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+
+			if (_unifiedLights.IsEnabled)
 			{
 				await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
 				return;
 			}
+
+			var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
+			try
+			{
+				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
+			}
+			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
+			{
+				_unifiedLights.Enable();
+				await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
+			}
+		}
+		finally
+		{
+			_writeGate.Release();
+		}
+	}
+
+	public void Dispose()
+	{
+		if (_disposed)
+		{
+			return;
 		}
 
-		try
-		{
-			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
-		}
-		catch (Exception ex) when (IsUnsupportedPadLedError(ex))
-		{
-			_unifiedLights.Enable();
-			await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
-		}
+		_disposed = true;
+		_writeGate.Dispose();
 	}
 
 	private static bool IsUnsupportedPadLedError(Exception ex)
