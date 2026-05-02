@@ -6,7 +6,6 @@ using System.Threading;
 
 using var cts = new CancellationTokenSource();
 var cancelPressCount = 0;
-var shutdownBlankInvoked = 0;
 
 var options = new MaschineClientOptions();
 using var client = new MaschineClient(options);
@@ -14,13 +13,10 @@ await using var demo = new DemoController(client);
 
 void TryBlankSurface()
 {
-	if (Interlocked.Exchange(ref shutdownBlankInvoked, 1) != 0)
-	{
-		return;
-	}
-
 	try
 	{
+		client.ClearDotMatrixAsync(CancellationToken.None).GetAwaiter().GetResult();
+		Thread.Sleep(20);
 		client.ClearDotMatrixAsync(CancellationToken.None).GetAwaiter().GetResult();
 		client.Pads.SetAllColorsAsync(PadColor.Off, CancellationToken.None).GetAwaiter().GetResult();
 		client.Buttons.SetAllLedsAsync(0, CancellationToken.None).GetAwaiter().GetResult();
@@ -40,24 +36,13 @@ Console.CancelKeyPress += (_, e) =>
 	{
 		Console.WriteLine("Ctrl+C received, shutting down...");
 		cts.Cancel();
-		Thread.Sleep(180);
-		TryBlankSurface();
-
-		try
-		{
-			client.DisconnectAsync().GetAwaiter().GetResult();
-		}
-		catch
-		{
-			// Continue to process exit.
-		}
-
-		Environment.Exit(0);
-
 		return;
 	}
 
 	Console.WriteLine("Force exit requested.");
+	TryBlankSurface();
+	Thread.Sleep(40);
+	TryBlankSurface();
 	Environment.Exit(130);
 };
 
@@ -123,6 +108,8 @@ catch (Exception ex)
 }
 finally
 {
+	TryBlankSurface();
+	Thread.Sleep(40);
 	TryBlankSurface();
 }
 

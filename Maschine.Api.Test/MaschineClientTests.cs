@@ -718,4 +718,30 @@ public sealed class MaschineClientTests
 		await client.DisconnectAsync();
 		client.Dispose();
 	}
+
+	[Fact]
+	public async Task DisconnectAsync_PerformsDotMatrixClearFeatureFallback()
+	{
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		await client.SetDotMatrixZebraLinesAsync();
+		await client.DisconnectAsync();
+
+		device.WrittenFeatureReports.Should().Contain(r => r.Length == 265 && r[0] == 0xE0);
+		var topFeature = device.WrittenFeatureReports[^2];
+		var bottomFeature = device.WrittenFeatureReports[^1];
+		for (var i = 9; i < topFeature.Length; i++)
+		{
+			topFeature[i].Should().Be(0);
+		}
+
+		for (var i = 9; i < bottomFeature.Length; i++)
+		{
+			bottomFeature[i].Should().Be(0);
+		}
+
+		client.Dispose();
+	}
 }

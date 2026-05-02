@@ -132,7 +132,7 @@ public async Task DisconnectAsync()
 
 			if (_dotMatrixDisplay is not null)
 			{
-				await _dotMatrixDisplay.ClearAsync(CancellationToken.None).ConfigureAwait(false);
+				await _dotMatrixDisplay.ClearWithFallbackAsync(CancellationToken.None).ConfigureAwait(false);
 			}
 		}
 		catch
