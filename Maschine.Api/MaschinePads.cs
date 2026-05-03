@@ -11,6 +11,7 @@ internal sealed class MaschinePads : IPads, IDisposable
 {
 	private readonly IHidDevice _device;
 	private readonly MikroMk3UnifiedLights _unifiedLights;
+	private readonly LedBrightnessController _brightness;
 	private readonly PadState[] _states;
 	private readonly PadColor[] _colors;
 	private readonly SemaphoreSlim _writeGate = new(1, 1);
@@ -19,10 +20,11 @@ internal sealed class MaschinePads : IPads, IDisposable
 	/// <inheritdoc/>
 	public event EventHandler<PadState>? PadChanged;
 
-	internal MaschinePads(IHidDevice device, MikroMk3UnifiedLights unifiedLights)
+	internal MaschinePads(IHidDevice device, MikroMk3UnifiedLights unifiedLights, LedBrightnessController brightness)
 	{
 		_device = device;
 		_unifiedLights = unifiedLights;
+		_brightness = brightness;
 		_states = new PadState[MaschineDeviceConstants.MikroMk3PadCount];
 		_colors = new PadColor[MaschineDeviceConstants.MikroMk3PadCount];
 		for (var i = 0; i < _states.Length; i++)
@@ -59,11 +61,11 @@ internal sealed class MaschinePads : IPads, IDisposable
 		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			_colors[padIndex] = color;
+			_colors[padIndex] = _brightness.Scale(color);
 
 			if (_unifiedLights.IsEnabled)
 			{
-				await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
+				await _unifiedLights.SetPadColorAsync(padIndex, _colors[padIndex], cancellationToken).ConfigureAwait(false);
 				return;
 			}
 
@@ -75,7 +77,7 @@ internal sealed class MaschinePads : IPads, IDisposable
 			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
 			{
 				_unifiedLights.Enable();
-				await _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken).ConfigureAwait(false);
+				await _unifiedLights.SetPadColorAsync(padIndex, _colors[padIndex], cancellationToken).ConfigureAwait(false);
 			}
 		}
 		finally
@@ -90,18 +92,19 @@ internal sealed class MaschinePads : IPads, IDisposable
 		await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
+			var scaled = _brightness.Scale(color);
 			for (var i = 0; i < _colors.Length; i++)
 			{
-				_colors[i] = color;
+				_colors[i] = scaled;
 			}
 
 			if (_unifiedLights.IsEnabled)
 			{
-				await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
+				await _unifiedLights.SetAllPadColorsAsync(scaled, cancellationToken).ConfigureAwait(false);
 				return;
 			}
 
-			var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
+			var report = MikroMk3Protocol.BuildAllPadsColorReport(scaled);
 			try
 			{
 				await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
@@ -109,7 +112,7 @@ internal sealed class MaschinePads : IPads, IDisposable
 			catch (Exception ex) when (IsUnsupportedPadLedError(ex))
 			{
 				_unifiedLights.Enable();
-				await _unifiedLights.SetAllPadColorsAsync(color, cancellationToken).ConfigureAwait(false);
+				await _unifiedLights.SetAllPadColorsAsync(scaled, cancellationToken).ConfigureAwait(false);
 			}
 		}
 		finally
@@ -150,14 +153,22 @@ internal sealed class MaschinePads : IPads, IDisposable
 	/// </summary>
 	internal void ApplyReport(byte[] report)
 	{
-		var newStates = MikroMk3Protocol.ParsePadPressureReport(report);
-		for (var i = 0; i < newStates.Count; i++)
+		if (report.Length < MikroMk3Protocol.PadPressureReportLength || report[0] != MikroMk3Protocol.PadPressureReportId)
 		{
-			if (_states[i].Pressure != newStates[i].Pressure)
-			{
-				_states[i] = newStates[i];
-				PadChanged?.Invoke(this, _states[i]);
-			}
+			return;
+		}
+
+		var padState = MikroMk3Protocol.ParsePadPressureReport(report);
+		var idx = padState.Index;
+		if (idx < 0 || idx >= _states.Length)
+		{
+			return;
+		}
+
+		if (_states[idx].Pressure != padState.Pressure)
+		{
+			_states[idx] = padState;
+			PadChanged?.Invoke(this, _states[idx]);
 		}
 	}
 }

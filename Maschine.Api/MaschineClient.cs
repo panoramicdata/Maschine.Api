@@ -2,8 +2,10 @@ using Maschine.Api.Exceptions;
 using Maschine.Api.Interfaces;
 using Maschine.Api.Internal;
 using Maschine.Api.Models;
+using Maschine.Api.Widgets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Globalization;
 
 namespace Maschine.Api;
 
@@ -25,6 +27,12 @@ public static partial void UnhandledReport(ILogger logger, byte reportId);
 
 [LoggerMessage(Level = LogLevel.Warning, Message = "Ignoring malformed report ID 0x{ReportId:X2} (len={Length}).")]
 public static partial void MalformedReport(ILogger logger, byte reportId, int length);
+
+[LoggerMessage(Level = LogLevel.Information, Message = "Input report ID 0x{ReportId:X2} (len={Length}).")]
+public static partial void InputReport(ILogger logger, byte reportId, int length);
+
+[LoggerMessage(Level = LogLevel.Debug, Message = "{Message}")]
+public static partial void TraceLine(ILogger logger, string message);
 }
 
 /// <summary>
@@ -35,6 +43,10 @@ public sealed class MaschineClient : IMaschineClient
 private readonly MaschineClientOptions _options;
 private readonly IHidDeviceFactory _factory;
 private readonly ILogger<MaschineClient> _logger;
+private readonly LedBrightnessController _brightness;
+private readonly Dictionary<byte, byte[]> _previousTracedReports = new();
+private readonly Dictionary<byte, DateTime> _previousTraceTimesById = new();
+private DateTime? _previousTraceTime;
 private IHidDevice? _device;
 private MaschinePads? _pads;
 private MaschineButtons? _buttons;
@@ -83,6 +95,14 @@ internal MaschineClient(MaschineClientOptions options, IHidDeviceFactory factory
 _options = options;
 _factory = factory;
 _logger = logger;
+_brightness = new LedBrightnessController(options.GlobalLedBrightnessPercent);
+}
+
+/// <inheritdoc/>
+public int LedBrightnessPercent
+{
+	get => _brightness.Percent;
+	set => _brightness.Percent = value;
 }
 
 /// <inheritdoc/>
@@ -108,8 +128,8 @@ _device = _factory.TryOpen(_options.VendorId, _options.ProductId, _options.Devic
 			_unifiedLights.Enable();
 		}
 
-		_pads = new MaschinePads(_device, _unifiedLights);
-		_buttons = new MaschineButtons(_device, _unifiedLights);
+		_pads = new MaschinePads(_device, _unifiedLights, _brightness);
+		_buttons = new MaschineButtons(_device, _unifiedLights, _brightness);
 _dotMatrixDisplay = new MikroMk3DotMatrixDisplay(_device);
 _encoders = new MaschineEncoders();
 
@@ -208,6 +228,56 @@ public Task ClearDotMatrixAsync(CancellationToken cancellationToken = default)
 public Task SetDotMatrixZebraLinesAsync(int phase = 0, CancellationToken cancellationToken = default)
 	=> EnsureConnected(_dotMatrixDisplay).SetZebraLinesAsync(phase, cancellationToken);
 
+/// <inheritdoc/>
+public Task SetDotMatrixBitmapAsync(byte[] bitmap, int xOffset = 0, int yOffset = 0, CancellationToken cancellationToken = default)
+	=> EnsureConnected(_dotMatrixDisplay).SetBitmapAsync(bitmap, xOffset, yOffset, cancellationToken);
+
+/// <inheritdoc/>
+public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, int xOffset = 0, int yOffset = 0, CancellationToken cancellationToken = default)
+	=> EnsureConnected(_dotMatrixDisplay).SetTextAsync(lines, mode, xOffset, yOffset, cancellationToken);
+
+/// <inheritdoc/>
+public Task SetDotMatrixDashboardAsync(DotMatrixDashboard dashboard, CancellationToken cancellationToken = default)
+	=> SetDotMatrixBitmapAsync((dashboard ?? throw new ArgumentNullException(nameof(dashboard))).BuildBitmap(), cancellationToken: cancellationToken);
+
+/// <inheritdoc/>
+public Task SetDotMatrixWidgetsAsync(IReadOnlyList<IDotMatrixWidget> widgets, CancellationToken cancellationToken = default)
+{
+	ArgumentNullException.ThrowIfNull(widgets);
+	var dashboard = new DotMatrixDashboard();
+	foreach (var widget in widgets)
+	{
+		dashboard.AddWidget(widget);
+	}
+
+	return SetDotMatrixDashboardAsync(dashboard, cancellationToken);
+}
+
+/// <inheritdoc/>
+public async Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard, int framesPerSecond = 30, CancellationToken cancellationToken = default)
+{
+	ArgumentNullException.ThrowIfNull(dashboard);
+	if (framesPerSecond <= 0)
+	{
+		throw new ArgumentOutOfRangeException(nameof(framesPerSecond), framesPerSecond, "framesPerSecond must be > 0.");
+	}
+
+	var delay = TimeSpan.FromMilliseconds(1000.0 / framesPerSecond);
+	byte[]? previousFrame = null;
+	while (!cancellationToken.IsCancellationRequested)
+	{
+		var frame = dashboard.BuildBitmap();
+		if (previousFrame is null || !frame.AsSpan().SequenceEqual(previousFrame))
+		{
+			await SetDotMatrixBitmapAsync(frame, cancellationToken: cancellationToken).ConfigureAwait(false);
+			previousFrame = frame;
+		}
+
+		dashboard.AdvanceFrame();
+		await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+	}
+}
+
 // Private
 
 private async Task RunReadLoopAsync(CancellationToken cancellationToken)
@@ -242,6 +312,35 @@ private void DispatchReport(byte[] report)
 
 	try
 	{
+		if (_options.TraceInputReports && _logger.IsEnabled(LogLevel.Debug))
+		{
+			var kind = report[0] switch
+			{
+				MikroMk3Protocol.PadPressureReportId => "PAD",
+				MikroMk3Protocol.ButtonReportId => "BUTTON",
+				_ => "UNKNOWN",
+			};
+			var now = DateTime.UtcNow;
+			var timestamp = now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+			var dtAll = _previousTraceTime.HasValue
+				? $"dtAll={((now - _previousTraceTime.Value).TotalMilliseconds):0.0}ms"
+				: "dtAll=init";
+			var dtId = _previousTraceTimesById.TryGetValue(report[0], out var previousForId)
+				? $"dtId={((now - previousForId).TotalMilliseconds):0.0}ms"
+				: "dtId=init";
+			_previousTraceTime = now;
+			_previousTraceTimesById[report[0]] = now;
+
+			var hex = BitConverter.ToString(report).Replace('-', ' ');
+			var diff = BuildTraceDiff(report);
+			var head = report.Length >= 4
+				? $"head=[{report[1]:X2} {report[2]:X2} {report[3]:X2}] "
+				: string.Empty;
+			#pragma warning disable CA1873
+			MaschineClientLog.TraceLine(_logger, $"[{timestamp}Z] Input {kind} ID=0x{report[0]:X2} len={report.Length} {dtAll} {dtId} {diff} {head}bytes=[{hex}]");
+			#pragma warning restore CA1873
+		}
+
 		switch (report[0])
 		{
 			case MikroMk3Protocol.PadPressureReportId:
@@ -250,10 +349,7 @@ private void DispatchReport(byte[] report)
 
 			case MikroMk3Protocol.ButtonReportId:
 				_buttons?.ApplyReport(report);
-				break;
-
-			case MikroMk3Protocol.EncoderReportId:
-				_encoders?.ApplyReport(report);
+				_encoders?.ApplyTouchStripButtonReport(report);
 				break;
 
 			default:
@@ -265,6 +361,37 @@ private void DispatchReport(byte[] report)
 	{
 		MaschineClientLog.MalformedReport(_logger, report[0], report.Length);
 	}
+}
+
+private string BuildTraceDiff(byte[] report)
+{
+	if (!_previousTracedReports.TryGetValue(report[0], out var previous))
+	{
+		_previousTracedReports[report[0]] = (byte[])report.Clone();
+		return "chg=init";
+	}
+
+	var max = Math.Min(previous.Length, report.Length);
+	var changes = new List<string>();
+	for (var i = 0; i < max; i++)
+	{
+		if (previous[i] != report[i])
+		{
+			changes.Add($"{i}:{previous[i]:X2}->{report[i]:X2}");
+			if (changes.Count >= 10)
+			{
+				break;
+			}
+		}
+	}
+
+	if (previous.Length != report.Length)
+	{
+		changes.Add($"len:{previous.Length}->{report.Length}");
+	}
+
+	_previousTracedReports[report[0]] = (byte[])report.Clone();
+	return changes.Count == 0 ? "chg=none" : $"chg={string.Join(',', changes)}";
 }
 
 private static T EnsureConnected<T>(T? value) where T : class

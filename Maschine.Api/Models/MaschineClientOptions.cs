@@ -23,4 +23,16 @@ public sealed class MaschineClientOptions
 	/// Enable this on devices where legacy reports are accepted but LEDs do not visibly update.
 	/// </summary>
 	public bool ForceUnifiedLightOutput { get; set; }
+
+	/// <summary>
+	/// Global LED brightness scalar applied to pad and button writes.
+	/// Range: 0-100, where 100 is full brightness.
+	/// </summary>
+	public int GlobalLedBrightnessPercent { get; set; } = 100;
+
+	/// <summary>
+	/// Emit raw HID input report diagnostics through the client logger.
+	/// Useful when reverse-engineering report IDs/lengths on a live device.
+	/// </summary>
+	public bool TraceInputReports { get; set; }
 }

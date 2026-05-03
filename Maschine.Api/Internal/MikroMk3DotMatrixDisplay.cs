@@ -1,4 +1,5 @@
 using System.Threading;
+using Maschine.Api.Models;
 
 namespace Maschine.Api.Internal;
 
@@ -76,6 +77,39 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		return WriteSectionsAsync(top, bottom, cancellationToken);
 	}
 
+	/// <summary>
+	/// Writes a raw row-major packed monochrome bitmap to the display.
+	/// </summary>
+	/// <param name="bitmap">
+	/// 512-byte packed bitmap: 32 rows × 16 bytes/row.
+	/// <c>bitmap[row * 16 + col / 8]</c> bit <c>7 − (col % 8)</c> is the pixel at
+	/// <c>(row, col)</c>; a set bit = lit pixel.
+	/// </param>
+	/// <param name="xOffset">Signed pixel offset applied to the bitmap. Positive moves content right.</param>
+	/// <param name="yOffset">Signed pixel offset applied to the bitmap. Positive moves content down.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	internal Task SetBitmapAsync(byte[] bitmap, int xOffset, int yOffset, CancellationToken cancellationToken)
+	{
+		var pageBuffer = DisplayBitmapRenderer.BitmapToPageBuffer(bitmap, xOffset, yOffset);
+		var (top, bottom) = DisplayBitmapRenderer.SplitToSections(pageBuffer);
+		return WriteSectionsAsync(top, bottom, cancellationToken);
+	}
+
+	/// <summary>
+	/// Renders text onto the display using the specified line mode and font.
+	/// </summary>
+	/// <param name="lines">Text lines to render. Extra lines beyond the mode capacity are ignored.</param>
+	/// <param name="mode">Controls row count, font size, and vertical scaling.</param>
+	/// <param name="xOffset">Signed pixel offset applied to the text. Positive moves content right.</param>
+	/// <param name="yOffset">Signed pixel offset applied to the text. Positive moves content down.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	internal Task SetTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, int xOffset, int yOffset, CancellationToken cancellationToken)
+	{
+		var pageBuffer = DisplayBitmapRenderer.TextToPageBuffer(lines, mode, xOffset, yOffset);
+		var (top, bottom) = DisplayBitmapRenderer.SplitToSections(pageBuffer);
+		return WriteSectionsAsync(top, bottom, cancellationToken);
+	}
+
 	private async Task WriteSectionsAsync(byte[] topPixels, byte[] bottomPixels, CancellationToken cancellationToken)
 	{
 		if (topPixels.Length != PixelCountPerSection)
@@ -91,8 +125,8 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			var top = BuildPacket(s_topHeader, topPixels);
-			var bottom = BuildPacket(s_bottomHeader, bottomPixels);
+			var top = BuildPacket(s_topHeader, ApplyDisplayPolarity(topPixels));
+			var bottom = BuildPacket(s_bottomHeader, ApplyDisplayPolarity(bottomPixels));
 
 			await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
 			await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
@@ -118,8 +152,8 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			var top = BuildPacket(s_topHeader, topPixels);
-			var bottom = BuildPacket(s_bottomHeader, bottomPixels);
+			var top = BuildPacket(s_topHeader, ApplyDisplayPolarity(topPixels));
+			var bottom = BuildPacket(s_bottomHeader, ApplyDisplayPolarity(bottomPixels));
 
 			await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
 			await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
@@ -150,5 +184,16 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		Buffer.BlockCopy(header, 0, packet, 0, header.Length);
 		Buffer.BlockCopy(pixels, 0, packet, header.Length, pixels.Length);
 		return packet;
+	}
+
+	private static byte[] ApplyDisplayPolarity(byte[] pixels)
+	{
+		var flipped = new byte[pixels.Length];
+		for (var i = 0; i < pixels.Length; i++)
+		{
+			flipped[i] = (byte)~pixels[i];
+		}
+
+		return flipped;
 	}
 }

@@ -11,6 +11,7 @@ internal sealed class MaschineButtons : IButtons
 {
 	private readonly IHidDevice _device;
 	private readonly MikroMk3UnifiedLights _unifiedLights;
+	private readonly LedBrightnessController _brightness;
 	private readonly ButtonState[] _states;
 	private bool _buttonLedUnsupported;
 	private EncoderTouchState _lastEncoderTouch;
@@ -19,12 +20,19 @@ internal sealed class MaschineButtons : IButtons
 	public event EventHandler<ButtonState>? ButtonChanged;
 
 	/// <inheritdoc/>
+	public event EventHandler<ButtonState>? ButtonPressed;
+
+	/// <inheritdoc/>
+	public event EventHandler<ButtonState>? ButtonReleased;
+
+	/// <inheritdoc/>
 	public event EventHandler<EncoderTouchState>? EncoderTouchChanged;
 
-	internal MaschineButtons(IHidDevice device, MikroMk3UnifiedLights unifiedLights)
+	internal MaschineButtons(IHidDevice device, MikroMk3UnifiedLights unifiedLights, LedBrightnessController brightness)
 	{
 		_device = device;
 		_unifiedLights = unifiedLights;
+		_brightness = brightness;
 		_states = new ButtonState[MaschineDeviceConstants.MikroMk3ButtonCount];
 		for (var i = 0; i < _states.Length; i++)
 		{
@@ -50,16 +58,26 @@ internal sealed class MaschineButtons : IButtons
 	/// <inheritdoc/>
 	public Task SetLedAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken = default)
 	{
-		var report = MikroMk3Protocol.BuildButtonLedReport(buttonIndex, brightness);
-		return WriteSingleButtonLedReportAsync(report, buttonIndex, brightness, cancellationToken);
+		var scaled = _brightness.Scale(brightness);
+		var report = MikroMk3Protocol.BuildButtonLedReport(buttonIndex, scaled);
+		return WriteSingleButtonLedReportAsync(report, buttonIndex, scaled, cancellationToken);
 	}
 
 	/// <inheritdoc/>
 	public Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken = default)
 	{
-		var report = MikroMk3Protocol.BuildAllButtonLedsReport(brightness);
-		return WriteAllButtonLedsReportAsync(report, brightness, cancellationToken);
+		var scaled = _brightness.Scale(brightness);
+		var report = MikroMk3Protocol.BuildAllButtonLedsReport(scaled);
+		return WriteAllButtonLedsReportAsync(report, scaled, cancellationToken);
 	}
+
+	/// <inheritdoc/>
+	public Task SetOnOffAsync(int buttonIndex, bool isOn, CancellationToken cancellationToken = default)
+		=> SetLedAsync(buttonIndex, isOn ? (byte)255 : (byte)0, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task SetAllOnOffAsync(bool isOn, CancellationToken cancellationToken = default)
+		=> SetAllLedsAsync(isOn ? (byte)255 : (byte)0, cancellationToken);
 
 	private async Task WriteSingleButtonLedReportAsync(byte[] report, int buttonIndex, byte brightness, CancellationToken cancellationToken)
 	{
@@ -142,6 +160,14 @@ internal sealed class MaschineButtons : IButtons
 			{
 				_states[i] = new ButtonState(i, isPressed);
 				ButtonChanged?.Invoke(this, _states[i]);
+				if (isPressed)
+				{
+					ButtonPressed?.Invoke(this, _states[i]);
+				}
+				else
+				{
+					ButtonReleased?.Invoke(this, _states[i]);
+				}
 			}
 		}
 

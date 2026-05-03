@@ -252,7 +252,7 @@ public sealed class MaschineClientTests
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
 		report[1] = 0x00;
-		report[2] = 0x01; // pad 0 pressure = 0x100 (high nibble)
+		report[2] = 0x41; // active pressure: (0x41 - 0x40) * 256 = 256
 		device.EnqueueReport(report);
 
 		// Allow the read loop to process the queued report
@@ -292,7 +292,32 @@ public sealed class MaschineClientTests
 	}
 
 	[Fact]
-	public async Task EncoderChanged_EventFired_WhenEncoderReportReceived()
+
+	public async Task EncoderChanged_NotFiredByUnknownReport()
+	{
+		// Encoder rotation report format is not yet confirmed for Mikro MK3.
+		// Sending an unknown report ID should not fire EncoderChanged.
+		var device = new FakeHidDevice();
+		var client = CreateClient(device);
+		await client.ConnectAsync();
+
+		EncoderDelta? received = null;
+		client.Encoders.EncoderChanged += (_, delta) => received = delta;
+
+		var report = new byte[64];
+		report[0] = 0xFE; // unknown report ID
+		device.EnqueueReport(report);
+
+		await Task.Delay(100);
+
+		received.Should().BeNull();
+
+		await client.DisconnectAsync();
+		client.Dispose();
+	}
+
+	[Fact]
+	public async Task EncoderChanged_FiredByTouchStripStyleButtonReport()
 	{
 		var device = new FakeHidDevice();
 		var client = CreateClient(device);
@@ -301,21 +326,27 @@ public sealed class MaschineClientTests
 		EncoderDelta? received = null;
 		client.Encoders.EncoderChanged += (_, delta) => received = delta;
 
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[1] = 2; // encoder 0 CW by 2
-		device.EnqueueReport(report);
+		var first = new byte[MikroMk3Protocol.ButtonReportLength];
+		first[0] = MikroMk3Protocol.ButtonReportId;
+		first[7] = 0x0A;
+		first[10] = 0x20;
+		device.EnqueueReport(first);
+
+		var second = new byte[MikroMk3Protocol.ButtonReportLength];
+		second[0] = MikroMk3Protocol.ButtonReportId;
+		second[7] = 0x0A;
+		second[10] = 0x30;
+		device.EnqueueReport(second);
 
 		await Task.Delay(100);
 
 		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(0);
-		received.Value.Delta.Should().Be(2);
+		received!.Value.Index.Should().Be(8);
+		received.Value.Delta.Should().NotBe(0);
 
 		await client.DisconnectAsync();
 		client.Dispose();
 	}
-
 	[Fact]
 	public async Task SetColorAsync_WritesSinglePadReport()
 	{
@@ -476,7 +507,7 @@ public sealed class MaschineClientTests
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
 		report[1] = 0x00;
-		report[2] = 0x01;
+		report[2] = 0x41;
 		device.EnqueueReport(report);
 
 		await Task.Delay(100);
@@ -614,9 +645,9 @@ public sealed class MaschineClientTests
 		var client = CreateClient(device);
 		await client.ConnectAsync();
 
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[1] = 2;
+		// Send an unknown report ID; no handler should throw.
+		var report = new byte[64];
+		report[0] = 0xFE;
 		device.EnqueueReport(report);
 
 		await Task.Delay(100);

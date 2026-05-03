@@ -10,6 +10,12 @@ public interface IButtons
 	/// <summary>Raised when any button is pressed or released.</summary>
 	event EventHandler<ButtonState> ButtonChanged;
 
+	/// <summary>Raised when any button transitions to pressed.</summary>
+	event EventHandler<ButtonState>? ButtonPressed;
+
+	/// <summary>Raised when any button transitions to released.</summary>
+	event EventHandler<ButtonState>? ButtonReleased;
+
 	/// <summary>
 	/// Raised when the volume encoder's capacitive touch sensor or absolute position changes.
 	/// The <see cref="EncoderTouchState.KnobValue"/> is an absolute 0–15 position.
@@ -33,4 +39,19 @@ public interface IButtons
 	/// <param name="brightness">Brightness level applied to every button LED (0 = off, 127 = maximum).</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Sets a single button LED to a managed on/off state.
+	/// </summary>
+	/// <param name="buttonIndex">Zero-based button index.</param>
+	/// <param name="isOn">True for on, false for off.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task SetOnOffAsync(int buttonIndex, bool isOn, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Sets all button LEDs to a managed on/off state.
+	/// </summary>
+	/// <param name="isOn">True for on, false for off.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task SetAllOnOffAsync(bool isOn, CancellationToken cancellationToken = default);
 }

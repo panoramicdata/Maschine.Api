@@ -25,27 +25,20 @@ internal const byte ButtonLedReportId = 0x81;
 // ── Input report IDs ─────────────────────────────────────────────────────
 
 /// <summary>HID input report ID carrying pad pressure data.</summary>
-internal const byte PadPressureReportId = 0x20;
+	internal const byte PadPressureReportId = 0x02;
 
-/// <summary>HID input report ID carrying button state data.</summary>
-internal const byte ButtonReportId = 0x01;
-
-/// <summary>HID input report ID carrying encoder delta data.</summary>
-internal const byte EncoderReportId = 0x02;
-
+	/// <summary>HID input report ID carrying button state data.</summary>
+	internal const byte ButtonReportId = 0x01;
 // ── Report sizes (bytes, including the leading report-ID byte) ──────────
 
 /// <summary>Total byte length of a pad-pressure input report.</summary>
-internal const int PadPressureReportLength = 33; // 1 ID + 16 pads × 2 bytes
+	internal const int PadPressureReportLength = 64; // 1 ID + pad index + pressure + noise + 61 reserved bytes
 
-/// <summary>Total byte length of a button input report.</summary>
+	/// <summary>Total byte length of a button input report.</summary>
 	/// <remarks>
 	/// The full report is 14 bytes: 1 ID + 5 button bytes + 1 encoder-touch byte + 1 encoder-value byte + 6 strip/reserved bytes.
 	/// </remarks>
 	internal const int ButtonReportLength = 14; // 1 ID + 13 data bytes
-/// <summary>Total byte length of an encoder input report.</summary>
-internal const int EncoderReportLength = 10; // 1 ID + 9 encoder bytes
-
 /// <summary>Total byte length of the pad-LED output report.</summary>
 internal const int PadLedReportLength = 49; // 1 ID + 16 pads × 3 bytes (R, G, B)
 
@@ -58,24 +51,34 @@ internal const int ButtonLedReportLength = 80; // 1 ID + 79 brightness bytes (45
 // ── Decoders ─────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Parses a pad-pressure input report into a list of <see cref="PadState"/> values.
+/// Parses a pad-pressure input report into a <see cref="PadState"/> for the active pad.
 /// </summary>
+/// <remarks>
+/// Hardware protocol (confirmed from calibration traces):
+///   report[0] = 0x02 (report ID)
+///   report[1] = pad index (0x00–0x0F)
+///   report[2] = pressure coarse: 0x40 = idle/rest, &gt;0x40 = active (pressure = raw - 0x40),
+///               0x30 = released/lifted transition (treated as pressure 0)
+///   report[3] = sub-byte noise (ignored)
+/// Pressure is scaled by 256 so values span the full 0–3840 range (compatible with
+/// 12-bit consumers; max raw delta of 15 × 256 = 3840).
+/// Physical pad layout (pad 1 = bottom-left, pad 16 = top-right):
+///   Bottom row:  indices 12, 13, 14, 15
+///   Row 2:       indices  8,  9, 10, 11
+///   Row 3:       indices  4,  5,  6,  7
+///   Top row:     indices  0,  1,  2,  3
+/// </remarks>
 /// <param name="report">Raw report bytes (must be at least <see cref="PadPressureReportLength"/> bytes).</param>
-/// <returns>One <see cref="PadState"/> per pad (16 entries).</returns>
+/// <returns>A <see cref="PadState"/> for the pad that generated this report.</returns>
 /// <exception cref="ArgumentException">Thrown when the report is too short or has an unexpected ID.</exception>
-internal static IReadOnlyList<PadState> ParsePadPressureReport(byte[] report)
+internal static PadState ParsePadPressureReport(byte[] report)
 {
-ValidateReport(report, PadPressureReportId, PadPressureReportLength);
+	ValidateReport(report, PadPressureReportId, PadPressureReportLength);
 
-var states = new PadState[MaschineDeviceConstants.MikroMk3PadCount];
-for (var i = 0; i < MaschineDeviceConstants.MikroMk3PadCount; i++)
-{
-var offset = 1 + (i * 2);
-var pressure = report[offset] | (report[offset + 1] << 8);
-states[i] = new PadState(i, pressure & 0x0FFF); // 12-bit value
-}
-
-return states;
+	var padIndex = report[1];
+	var raw = report[2];
+	var pressure = raw <= 0x40 ? 0 : (raw - 0x40) * 256;
+	return new PadState(padIndex, pressure);
 }
 
 /// <summary>
@@ -100,29 +103,7 @@ states[i] = new ButtonState(i, isPressed);
 return states;
 }
 
-/// <summary>
-/// Parses an encoder input report into a list of <see cref="EncoderDelta"/> values.
-/// Each non-zero byte represents a signed relative rotation for that encoder.
-/// </summary>
-/// <param name="report">Raw report bytes (must be at least <see cref="EncoderReportLength"/> bytes).</param>
-/// <returns>Zero or more encoder deltas (only encoders that moved are included).</returns>
-/// <exception cref="ArgumentException">Thrown when the report is too short or has an unexpected ID.</exception>
-internal static IReadOnlyList<EncoderDelta> ParseEncoderReport(byte[] report)
-{
-ValidateReport(report, EncoderReportId, EncoderReportLength);
 
-var deltas = new List<EncoderDelta>(MaschineDeviceConstants.MikroMk3EncoderCount);
-for (var i = 0; i < MaschineDeviceConstants.MikroMk3EncoderCount; i++)
-{
-var raw = (sbyte)report[1 + i]; // signed byte: positive = CW, negative = CCW
-if (raw != 0)
-{
-deltas.Add(new EncoderDelta(i, raw));
-}
-}
-
-return deltas;
-}
 
 /// <summary>
 	/// Parses the encoder touch state from a button input report.
