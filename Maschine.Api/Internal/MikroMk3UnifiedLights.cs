@@ -179,8 +179,9 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		{
 			return 0;
 		}
-		// Map 0-127 brightness to intensity in the low 2 bits; colour index 1 in high 6 bits.
-		byte intensity = brightness >= 85 ? (byte)3 : brightness >= 43 ? (byte)2 : (byte)1;
+		// Map brightness 1-255 to intensity 1-3; colour index 1 in high 6 bits.
+		// Thresholds are chosen so that 64/127/255 each hit a distinct level.
+		byte intensity = brightness >= 170 ? (byte)3 : brightness >= 85 ? (byte)2 : (byte)1;
 		return (byte)((1 << 2) | intensity);
 	}
 

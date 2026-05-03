@@ -13,9 +13,13 @@ internal sealed class MaschineButtons : IButtons
 	private readonly MikroMk3UnifiedLights _unifiedLights;
 	private readonly ButtonState[] _states;
 	private bool _buttonLedUnsupported;
+	private EncoderTouchState _lastEncoderTouch;
 
 	/// <inheritdoc/>
 	public event EventHandler<ButtonState>? ButtonChanged;
+
+	/// <inheritdoc/>
+	public event EventHandler<EncoderTouchState>? EncoderTouchChanged;
 
 	internal MaschineButtons(IHidDevice device, MikroMk3UnifiedLights unifiedLights)
 	{
@@ -116,17 +120,39 @@ internal sealed class MaschineButtons : IButtons
 
 	/// <summary>
 	/// Called by <see cref="MaschineClient"/> when a button report is received.
-	/// Updates internal state and raises <see cref="ButtonChanged"/> for any changed buttons.
+	/// Updates internal state and raises <see cref="ButtonChanged"/> and <see cref="EncoderTouchChanged"/> as needed.
 	/// </summary>
 	internal void ApplyReport(byte[] report)
 	{
-		var newStates = MikroMk3Protocol.ParseButtonReport(report);
-		for (var i = 0; i < newStates.Count; i++)
+		if (report.Length == 0 || report[0] != MikroMk3Protocol.ButtonReportId)
 		{
-			if (_states[i].IsPressed != newStates[i].IsPressed)
+			return;
+		}
+
+		// Only parse the real 40 physical buttons (indices 0–39); indices 40+ in the report
+		// are encoder-touch/value fields parsed separately below.
+		const int PhysicalButtonCount = 40;
+		for (var i = 0; i < PhysicalButtonCount; i++)
+		{
+			var byteIndex = 1 + (i / 8);
+			var bitIndex = i % 8;
+			var isPressed = byteIndex < report.Length && ((report[byteIndex] >> bitIndex) & 1) == 1;
+
+			if (_states[i].IsPressed != isPressed)
 			{
-				_states[i] = newStates[i];
+				_states[i] = new ButtonState(i, isPressed);
 				ButtonChanged?.Invoke(this, _states[i]);
+			}
+		}
+
+		// Parse encoder touch + absolute knob value
+		if (report.Length >= MikroMk3Protocol.ButtonReportLength)
+		{
+			var touch = MikroMk3Protocol.ParseEncoderTouchFromButtonReport(report);
+			if (touch != _lastEncoderTouch)
+			{
+				_lastEncoderTouch = touch;
+				EncoderTouchChanged?.Invoke(this, touch);
 			}
 		}
 	}

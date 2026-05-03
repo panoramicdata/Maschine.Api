@@ -22,6 +22,9 @@ public static partial void ReadError(ILogger logger, Exception ex);
 
 [LoggerMessage(Level = LogLevel.Debug, Message = "Unhandled report ID 0x{ReportId:X2}.")]
 public static partial void UnhandledReport(ILogger logger, byte reportId);
+
+[LoggerMessage(Level = LogLevel.Warning, Message = "Ignoring malformed report ID 0x{ReportId:X2} (len={Length}).")]
+public static partial void MalformedReport(ILogger logger, byte reportId, int length);
 }
 
 /// <summary>
@@ -232,24 +235,36 @@ break;
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage] // null branches on ?. are unreachable: fields are always set before DispatchReport is called
 private void DispatchReport(byte[] report)
 {
-switch (report[0])
-{
-case MikroMk3Protocol.PadPressureReportId:
-_pads?.ApplyReport(report);
-break;
+	if (report.Length == 0)
+	{
+		return;
+	}
 
-case MikroMk3Protocol.ButtonReportId:
-_buttons?.ApplyReport(report);
-break;
+	try
+	{
+		switch (report[0])
+		{
+			case MikroMk3Protocol.PadPressureReportId:
+				_pads?.ApplyReport(report);
+				break;
 
-case MikroMk3Protocol.EncoderReportId:
-_encoders?.ApplyReport(report);
-break;
+			case MikroMk3Protocol.ButtonReportId:
+				_buttons?.ApplyReport(report);
+				break;
 
-default:
-MaschineClientLog.UnhandledReport(_logger, report[0]);
-break;
-}
+			case MikroMk3Protocol.EncoderReportId:
+				_encoders?.ApplyReport(report);
+				break;
+
+			default:
+				MaschineClientLog.UnhandledReport(_logger, report[0]);
+				break;
+		}
+	}
+	catch (ArgumentException)
+	{
+		MaschineClientLog.MalformedReport(_logger, report[0], report.Length);
+	}
 }
 
 private static T EnsureConnected<T>(T? value) where T : class

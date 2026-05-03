@@ -10,6 +10,12 @@ public interface IButtons
 	/// <summary>Raised when any button is pressed or released.</summary>
 	event EventHandler<ButtonState> ButtonChanged;
 
+	/// <summary>
+	/// Raised when the volume encoder's capacitive touch sensor or absolute position changes.
+	/// The <see cref="EncoderTouchState.KnobValue"/> is an absolute 0–15 position.
+	/// </summary>
+	event EventHandler<EncoderTouchState>? EncoderTouchChanged;
+
 	/// <summary>Returns the last known state for every button.</summary>
 	IReadOnlyList<ButtonState> GetStates();
 

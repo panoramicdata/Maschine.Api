@@ -39,8 +39,10 @@ internal const byte EncoderReportId = 0x02;
 internal const int PadPressureReportLength = 33; // 1 ID + 16 pads × 2 bytes
 
 /// <summary>Total byte length of a button input report.</summary>
-internal const int ButtonReportLength = 6; // 1 ID + 5 bytes of bit-flags
-
+	/// <remarks>
+	/// The full report is 14 bytes: 1 ID + 5 button bytes + 1 encoder-touch byte + 1 encoder-value byte + 6 strip/reserved bytes.
+	/// </remarks>
+	internal const int ButtonReportLength = 14; // 1 ID + 13 data bytes
 /// <summary>Total byte length of an encoder input report.</summary>
 internal const int EncoderReportLength = 10; // 1 ID + 9 encoder bytes
 
@@ -122,7 +124,25 @@ deltas.Add(new EncoderDelta(i, raw));
 return deltas;
 }
 
-// ── Encoders ─────────────────────────────────────────────────────────────
+/// <summary>
+	/// Parses the encoder touch state from a button input report.
+	/// </summary>
+	/// <remarks>
+	/// Byte layout from the mk3.bitproto:
+	///   byte 6 bit 0  = encoder_touched (bool)
+	///   byte 7 bits 0-3 = encoder_value (uint4, absolute knob position 0–15)
+	/// </remarks>
+	/// <param name="report">Raw report bytes (must be at least <see cref="ButtonReportLength"/> bytes).</param>
+	/// <returns>An <see cref="EncoderTouchState"/> with touch flag and absolute knob value.</returns>
+	internal static EncoderTouchState ParseEncoderTouchFromButtonReport(byte[] report)
+	{
+		ValidateReport(report, ButtonReportId, ButtonReportLength);
+		var isTouched = (report[6] & 0x01) != 0;
+		var knobValue = (byte)(report[7] & 0x0F);
+		return new EncoderTouchState(isTouched, knobValue);
+	}
+
+	// ── Encoders ─────────────────────────────────────────────────────────────
 
 /// <summary>
 /// Builds a pad-LED output report that sets a single pad to the given colour.
