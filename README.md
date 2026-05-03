@@ -228,10 +228,13 @@ The demo is designed to prove the current device integration end to end.
 
 - connects to the first matching Mikro MK3 by default
 - forces unified light output by default so LED behavior works out of the box on current hardware
+- downloads and caches a public-domain demo drum soundfont on first run if it is not already present
 - starts the touch strip at midpoint position `13`
 - uses the touch strip LEDs as a colored level bar driven by the strip/slider control
+- uses the touch strip position as the demo drum master volume
 - cycles physical button LEDs through brightness levels when you press them
 - flashes pads white while they are pressed, then restores their base colors when released
+- triggers velocity-aware drum hits from pad pressure values when the demo audio kit is available
 - runs the dot-matrix dashboard showcase by default
 - clears pads, buttons, touch strip, and display on shutdown as a best-effort cleanup step
 

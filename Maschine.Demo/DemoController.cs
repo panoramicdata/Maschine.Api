@@ -93,6 +93,7 @@ internal sealed class DemoController : IAsyncDisposable
 	private readonly IMaschineClient _client;
 	private readonly ILogger<DemoController> _logger;
 	private IButtons? _buttons;
+	private DrumSoundfontPlayer? _drumPlayer;
 	private IPads? _pads;
 	private IEncoders? _encoders;
 	private ITouchStrip? _touchStrip;
@@ -130,6 +131,7 @@ internal sealed class DemoController : IAsyncDisposable
 		_pads = _client.Pads;
 		_encoders = _client.Encoders;
 		_touchStrip = _client.TouchStrip;
+		_drumPlayer = await DrumSoundfontPlayer.CreateAsync(_logger, cancellationToken).ConfigureAwait(false);
 
 		if (!runFullBrightness && !runPadColorSpace)
 		{
@@ -235,6 +237,9 @@ internal sealed class DemoController : IAsyncDisposable
 			}
 		}
 
+		_drumPlayer?.Dispose();
+		_drumPlayer = null;
+
 		await _client.DisconnectAsync().ConfigureAwait(false);
 	}
 
@@ -252,6 +257,8 @@ internal sealed class DemoController : IAsyncDisposable
 		}
 
 		_touchStripUpdateGate.Dispose();
+		_drumPlayer?.Dispose();
+		_drumPlayer = null;
 
 		await Task.CompletedTask.ConfigureAwait(false);
 	}
@@ -349,6 +356,7 @@ internal sealed class DemoController : IAsyncDisposable
 		if (!wasDown && isDown)
 		{
 			_logger.LogInformation("Pad DOWN: P{PadNumber,2} (raw {PadRaw,2}), pressure={Pressure} -> white", ToUserPadNumber(state.Index), state.Index, state.Pressure);
+			_drumPlayer?.PlayPad(MapPadIndexWithVerticalFlip(state.Index), state.Pressure);
 			_ = TrySetPadColorAsync(state.Index, PadColor.White);
 			return;
 		}
@@ -363,7 +371,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 	private void OnEncoderChanged(object? sender, EncoderDelta delta)
 	{
-		const int TouchStripNoiseFloor = 8;
+		const int TouchStripNoiseFloor = 20;
 		const int EncoderNoiseFloor = 24;
 		const int LogThrottleMs = 60;
 
@@ -384,6 +392,7 @@ internal sealed class DemoController : IAsyncDisposable
 			// Calibrated axis for strip LEDs.
 			var nowUtc = DateTime.UtcNow;
 			bool shouldLog;
+			int level;
 			lock (_animationSync)
 			{
 				shouldLog = (nowUtc - _lastEncoderLogUtc[delta.Index]).TotalMilliseconds >= LogThrottleMs;
@@ -393,11 +402,14 @@ internal sealed class DemoController : IAsyncDisposable
 				}
 
 				_touchStripLevel = Math.Clamp(_touchStripLevel + step, 0, MaschineDeviceConstants.MikroMk3TouchStripLedCount);
+				level = _touchStripLevel;
 			}
+
+			_drumPlayer?.SetVolumeFromStripLevel(level);
 
 			if (shouldLog)
 			{
-				_logger.LogInformation("Slider at position {Position}", _touchStripLevel);
+				_logger.LogInformation("Slider at position {Position} (drum volume {VolumePercent}%)", level, (int)Math.Round((level / 25.0) * 100.0));
 				_logger.LogDebug("Slider delta {Delta:+#;-#;0} (encoder index {Index})", delta.Delta, delta.Index);
 			}
 
@@ -489,6 +501,7 @@ internal sealed class DemoController : IAsyncDisposable
 			_touchStripLevel = 13;
 			_touchStripRenderedLevel = -1;
 			Array.Fill(_buttonBrightness, (byte)0);
+			_drumPlayer?.SetVolumeFromStripLevel(_touchStripLevel);
 			await UpdateTouchStripLedsCoalescedAsync().ConfigureAwait(false);
 		}
 		catch (Exception ex)
@@ -990,10 +1003,10 @@ internal sealed class DemoController : IAsyncDisposable
 		_logger.LogInformation("=== Maschine Mikro MK3 Reactive Demo ===");
 		_logger.LogInformation("Behavior:");
 		_logger.LogInformation("  Button press  -> cycles brightness: off -> mid -> full");
-		_logger.LogInformation("  Pad press     -> flash white on press, restore color on release");
+		_logger.LogInformation("  Pad press     -> flash white and trigger a velocity-aware drum hit");
 		_logger.LogInformation("  Knob          -> selects the active Dashboard by absolute position");
 		_logger.LogInformation("  Logo button   -> toggles Dashboard invert mode");
-		_logger.LogInformation("  Slider        -> updates strip LEDs and logs position");
+		_logger.LogInformation("  Slider        -> updates strip LEDs and controls demo drum volume");
 		_logger.LogInformation("  Dashboard     -> whole display made of non-overlapping Widgets");
 		_logger.LogInformation("  Demo pages     -> {DashboardCount} Dashboards available", _dashboards.Length);
 	}
