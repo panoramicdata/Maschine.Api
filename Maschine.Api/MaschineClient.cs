@@ -51,6 +51,7 @@ private IHidDevice? _device;
 private MaschinePads? _pads;
 private MaschineButtons? _buttons;
 private MaschineEncoders? _encoders;
+private MaschineTouchStrip? _touchStrip;
 private MikroMk3UnifiedLights? _unifiedLights;
 private MikroMk3DotMatrixDisplay? _dotMatrixDisplay;
 private CancellationTokenSource? _readLoopCts;
@@ -115,23 +116,27 @@ public IButtons Buttons => EnsureConnected(_buttons);
 public IEncoders Encoders => EnsureConnected(_encoders);
 
 /// <inheritdoc/>
+public ITouchStrip TouchStrip => EnsureConnected(_touchStrip);
+
+/// <inheritdoc/>
 public Task ConnectAsync(CancellationToken cancellationToken = default)
 {
-ObjectDisposedException.ThrowIf(_disposed, this);
+	ObjectDisposedException.ThrowIf(_disposed, this);
 
-_device = _factory.TryOpen(_options.VendorId, _options.ProductId, _options.DeviceIndex)
-?? throw new MaschineDeviceNotFoundException(_options.VendorId, _options.ProductId);
+	_device = _factory.TryOpen(_options.VendorId, _options.ProductId, _options.DeviceIndex)
+		?? throw new MaschineDeviceNotFoundException(_options.VendorId, _options.ProductId);
 
-		_unifiedLights = new MikroMk3UnifiedLights(_device);
-		if (_options.ForceUnifiedLightOutput)
-		{
-			_unifiedLights.Enable();
-		}
+	_unifiedLights = new MikroMk3UnifiedLights(_device);
+	if (_options.ForceUnifiedLightOutput)
+	{
+		_unifiedLights.Enable();
+	}
 
-		_pads = new MaschinePads(_device, _unifiedLights, _brightness);
-		_buttons = new MaschineButtons(_device, _unifiedLights, _brightness);
-_dotMatrixDisplay = new MikroMk3DotMatrixDisplay(_device);
-_encoders = new MaschineEncoders();
+	_pads = new MaschinePads(_device, _unifiedLights, _brightness);
+	_buttons = new MaschineButtons(_device, _unifiedLights, _brightness);
+	_touchStrip = new MaschineTouchStrip(_unifiedLights, _brightness);
+	_dotMatrixDisplay = new MikroMk3DotMatrixDisplay(_device);
+	_encoders = new MaschineEncoders();
 
 _readLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 _readLoop = RunReadLoopAsync(_readLoopCts.Token);
@@ -151,6 +156,11 @@ public async Task DisconnectAsync()
 			{
 				await _pads.SetAllColorsAsync(PadColor.Off, CancellationToken.None).ConfigureAwait(false);
 				await _buttons.SetAllLedsAsync(0, CancellationToken.None).ConfigureAwait(false);
+			}
+
+			if (_touchStrip is not null)
+			{
+				await _touchStrip.SetAllLedsAsync(0, CancellationToken.None).ConfigureAwait(false);
 			}
 
 			if (_dotMatrixDisplay is not null)

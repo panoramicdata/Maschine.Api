@@ -135,4 +135,32 @@ public sealed class DisplayFontTests
 
 		hasPixels.Should().BeTrue($"glyph for '{c}' should have at least one lit pixel");
 	}
+
+	// ── Font12 (Helv Regular/Bold) ──────────────────────────────────────────
+
+	[Fact]
+	public void Font12RegularGlyphs_HasCorrectWordCount()
+		=> DisplayFont.Font12x12HelvRegularGlyphs.Length.Should().Be(95 * DisplayFont.Font12Height);
+
+	[Fact]
+	public void Font12BoldGlyphs_HasCorrectWordCount()
+		=> DisplayFont.Font12x12HelvBoldGlyphs.Length.Should().Be(95 * DisplayFont.Font12Height);
+
+	[Fact]
+	public void GetGlyph12Regular_PrintableRange_AllHaveTwelveRows()
+	{
+		for (var c = ' '; c <= '~'; c++)
+		{
+			DisplayFont.GetGlyph12Regular(c).Length.Should().Be(DisplayFont.Font12Height);
+		}
+	}
+
+	[Fact]
+	public void GetGlyph12Bold_PrintableRange_AllHaveTwelveRows()
+	{
+		for (var c = ' '; c <= '~'; c++)
+		{
+			DisplayFont.GetGlyph12Bold(c).Length.Should().Be(DisplayFont.Font12Height);
+		}
+	}
 }

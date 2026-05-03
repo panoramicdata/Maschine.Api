@@ -4,7 +4,6 @@ using Maschine.Api.Models;
 using Maschine.Api.Widgets;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
-using System.Text;
 
 namespace Maschine.Demo;
 
@@ -18,7 +17,6 @@ namespace Maschine.Demo;
 /// </summary>
 internal sealed class DemoController : IAsyncDisposable
 {
-	private static readonly int[] s_touchStripLedButtons = [36, 37, 38, 39, 40, 41, 42, 43, 44];
 	private static readonly byte[] s_buttonBrightnessCycle = [0, 64, 127, 255];
 	private const int TouchStripEncoderIndex = 8;
 
@@ -44,24 +42,42 @@ internal sealed class DemoController : IAsyncDisposable
 		new(255,   0, 119),   // 15  fuchsia        (h=332°, palette 16)
 	];
 
+	private static readonly PadColor[] s_touchStripDemoColors =
+	[
+		new(255,   0,   0),
+		new(255,  48,   0),
+		new(255,  96,   0),
+		new(255, 144,   0),
+		new(255, 192,   0),
+		new(255, 224,   0),
+		new(224, 255,   0),
+		new(160, 255,   0),
+		new( 96, 255,   0),
+		new(  0, 255, 192),
+		new(  0, 255, 255),
+		new(  0, 208, 255),
+		new(  0, 160, 255),
+		new(  0, 112, 255),
+		new(  0,  64, 255),
+		new( 32,   0, 255),
+		new( 80,   0, 255),
+		new(128,   0, 255),
+		new(160,   0, 255),
+		new(192,   0, 255),
+		new(224,   0, 255),
+		new(255,   0, 224),
+		new(255,   0, 176),
+		new(255,   0, 128),
+		new(255, 255, 255),
+	];
+
 	// ── Zebra speed table: delay in ms for |velocity| = 1..5 ────────────────
 
 	private static readonly int[] s_zebraSpeedMs = [600, 200, 100, 50, 25];
 
-	// ── Random cross-mappings (built once in constructor) ───────────────────
-
-	/// <summary>buttonToPad[b] = the pad index that button b controls.</summary>
-	private readonly int[] _buttonToPad;
-
-	/// <summary>padToButton[p] = the button index that pad p controls.</summary>
-	private readonly int[] _padToButton;
-
-	/// <summary>encoderToPad[e] = the pad index that encoder e controls.</summary>
-	private readonly int[] _encoderToPad;
-
 	// ── Per-element state ───────────────────────────────────────────────────
 
-	private readonly byte[] _buttonBrightness; // current brightness per button
+	private readonly byte[] _buttonBrightness;
 	private readonly bool[] _padDown;
 	private readonly DateTime[] _lastEncoderLogUtc;
 	private readonly SemaphoreSlim _touchStripUpdateGate = new(1, 1);
@@ -79,6 +95,7 @@ internal sealed class DemoController : IAsyncDisposable
 	private IButtons? _buttons;
 	private IPads? _pads;
 	private IEncoders? _encoders;
+	private ITouchStrip? _touchStrip;
 	private bool _subscribed;
 
 	// ── Construction ────────────────────────────────────────────────────────
@@ -87,12 +104,6 @@ internal sealed class DemoController : IAsyncDisposable
 	{
 		_client = client;
 		_logger = logger;
-
-		var rng = new Random(42);
-
-		_buttonToPad = BuildMapping(rng, MaschineDeviceConstants.MikroMk3ButtonCount, MaschineDeviceConstants.MikroMk3PadCount);
-		_padToButton = BuildMapping(rng, MaschineDeviceConstants.MikroMk3PadCount, MaschineDeviceConstants.MikroMk3ButtonCount);
-		_encoderToPad = BuildMapping(rng, MaschineDeviceConstants.MikroMk3EncoderCount, MaschineDeviceConstants.MikroMk3PadCount);
 
 		_buttonBrightness = new byte[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_padDown = new bool[MaschineDeviceConstants.MikroMk3PadCount];
@@ -118,6 +129,7 @@ internal sealed class DemoController : IAsyncDisposable
 		_buttons = _client.Buttons;
 		_pads = _client.Pads;
 		_encoders = _client.Encoders;
+		_touchStrip = _client.TouchStrip;
 
 		if (!runFullBrightness && !runPadColorSpace)
 		{
@@ -209,6 +221,18 @@ internal sealed class DemoController : IAsyncDisposable
 		{
 			await TrySetAllLedsAsync(new PadColor(0, 0, 0), 0, "shutdown", CancellationToken.None).ConfigureAwait(false);
 			await TryClearDotMatrixAsync(CancellationToken.None).ConfigureAwait(false);
+		}
+
+		if (_touchStrip is not null)
+		{
+			try
+			{
+				await _touchStrip.SetAllLedsAsync(0, CancellationToken.None).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "LED write failed during shutdown.");
+			}
 		}
 
 		await _client.DisconnectAsync().ConfigureAwait(false);
@@ -368,7 +392,7 @@ internal sealed class DemoController : IAsyncDisposable
 					_lastEncoderLogUtc[delta.Index] = nowUtc;
 				}
 
-				_touchStripLevel = Math.Clamp(_touchStripLevel + step, 0, s_touchStripLedButtons.Length);
+				_touchStripLevel = Math.Clamp(_touchStripLevel + step, 0, MaschineDeviceConstants.MikroMk3TouchStripLedCount);
 			}
 
 			if (shouldLog)
@@ -387,7 +411,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 	private async Task UpdateTouchStripLedsCoalescedAsync()
 	{
-		if (_buttons is null)
+		if (_touchStrip is null)
 		{
 			return;
 		}
@@ -409,29 +433,14 @@ internal sealed class DemoController : IAsyncDisposable
 
 				if (level != _touchStripRenderedLevel)
 				{
-					if (_touchStripRenderedLevel < 0)
+					var leds = new PadColor[MaschineDeviceConstants.MikroMk3TouchStripLedCount];
+					var activeColor = level == 0 ? PadColor.Off : s_touchStripDemoColors[level - 1];
+					for (var i = 0; i < leds.Length; i++)
 					{
-						for (var i = 0; i < s_touchStripLedButtons.Length; i++)
-						{
-							var brightness = (byte)(i < level ? 127 : 0);
-							await TrySetButtonLedAsync(s_touchStripLedButtons[i], brightness).ConfigureAwait(false);
-						}
-					}
-					else if (level > _touchStripRenderedLevel)
-					{
-						for (var i = _touchStripRenderedLevel; i < level; i++)
-						{
-							await TrySetButtonLedAsync(s_touchStripLedButtons[i], 127).ConfigureAwait(false);
-						}
-					}
-					else
-					{
-						for (var i = level; i < _touchStripRenderedLevel; i++)
-						{
-							await TrySetButtonLedAsync(s_touchStripLedButtons[i], 0).ConfigureAwait(false);
-						}
+						leds[i] = i < level ? activeColor : PadColor.Off;
 					}
 
+					await _touchStrip.SetLedsAsync(leds).ConfigureAwait(false);
 					_touchStripRenderedLevel = level;
 				}
 
@@ -468,12 +477,19 @@ internal sealed class DemoController : IAsyncDisposable
 			// subsequent pad writes populate unified pad slots instead of being cleared.
 			await _buttons.SetAllLedsAsync(0, cancellationToken).ConfigureAwait(false);
 
+			if (_touchStrip is not null)
+			{
+				await _touchStrip.SetAllLedsAsync(0, cancellationToken).ConfigureAwait(false);
+			}
+
 			for (var pad = 0; pad < MaschineDeviceConstants.MikroMk3PadCount; pad++)
 			{
 				await _pads.SetColorAsync(pad, GetPadBaseColor(pad), cancellationToken).ConfigureAwait(false);
 			}
-			_touchStripLevel = 0;
-			_touchStripRenderedLevel = 0;
+			_touchStripLevel = 13;
+			_touchStripRenderedLevel = -1;
+			Array.Fill(_buttonBrightness, (byte)0);
+			await UpdateTouchStripLedsCoalescedAsync().ConfigureAwait(false);
 		}
 		catch (Exception ex)
 		{
@@ -508,7 +524,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 		try
 		{
-			await _pads.SetColorAsync(padIndex, color).ConfigureAwait(false);
+			await _pads.SetColorAsync(MapPadIndexWithVerticalFlip(padIndex), color).ConfigureAwait(false);
 		}
 		catch (Exception ex)
 		{
@@ -532,8 +548,6 @@ internal sealed class DemoController : IAsyncDisposable
 			_logger.LogWarning(ex, "Button write failed for B{ButtonIndex}.", buttonIndex);
 		}
 	}
-
-
 
 	private async Task TrySetPadColorSpaceAsync(CancellationToken cancellationToken)
 	{
@@ -646,6 +660,7 @@ internal sealed class DemoController : IAsyncDisposable
 		5 => "Spectrum",
 		6 => "Needle",
 		7 => "Mini",
+		8 => "Large",
 		_ => $"Dashboard {index}",
 	};
 
@@ -661,6 +676,7 @@ internal sealed class DemoController : IAsyncDisposable
 			BuildSpectrumDashboard(),
 			BuildNeedleDashboard(),
 			BuildMiniDashboard(),
+			BuildLargeDashboard(),
 		];
 	}
 
@@ -669,13 +685,13 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 128, 8), ["Dashboard Overview"], TextOverflowMode.Ellipsis)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new TextWidget("sub", new DisplayZone(0, 8, 128, 8), ["Knob picks dashboard"], TextOverflowMode.Scroll)
 		{
 			OverflowStepPixels = 1,
 			ScrollPadding = 4,
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new SpectrumWidget("eq", new DisplayZone(0, 16, 64, 16), [0.1f, 0.5f, 0.8f, 0.4f, 0.6f, 0.2f, 0.9f, 0.3f])
 		{
@@ -702,13 +718,13 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("header", new DisplayZone(0, 0, 128, 16), ["Status", "Buttons Pads Encoders"], TextOverflowMode.Ellipsis)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new TextWidget("ticker", new DisplayZone(0, 16, 128, 16), ["Widgets render inside Dashboards with no overlap allowed"], TextOverflowMode.Scroll)
 		{
 			OverflowStepPixels = 2,
 			ScrollPadding = 5,
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional12,
 		});
 		return dashboard;
 	}
@@ -718,7 +734,7 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 64, 8), [$"Mix {suffix}"], TextOverflowMode.None)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new VuWidget("vuL", new DisplayZone(0, 8, 20, 24), VuWidgetStyle.Bar, level: 0.2f * variant + 0.2f, peakLevel: 0.85f)
 		{
@@ -746,7 +762,7 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 128, 8), ["Levels"], TextOverflowMode.None)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new VuWidget("top", new DisplayZone(0, 8, 128, 8), VuWidgetStyle.Bar, level: 0.35f, peakLevel: 0.5f));
 		dashboard.AddWidget(new VuWidget("mid", new DisplayZone(0, 16, 128, 8), VuWidgetStyle.Bar, level: 0.65f, peakLevel: 0.8f, invert: true));
@@ -759,7 +775,7 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 128, 8), ["Spectrum"], TextOverflowMode.None)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new SpectrumWidget("bands", new DisplayZone(0, 8, 128, 24), [0.05f, 0.12f, 0.20f, 0.35f, 0.50f, 0.75f, 0.95f, 0.85f, 0.65f, 0.45f, 0.30f, 0.18f, 0.10f, 0.06f])
 		{
@@ -778,7 +794,7 @@ internal sealed class DemoController : IAsyncDisposable
 		var dashboard = new DotMatrixDashboard();
 		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 128, 8), ["VU Needle Widgets"], TextOverflowMode.Ellipsis)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8,
 		});
 		dashboard.AddWidget(new VuWidget("left", new DisplayZone(0, 8, 64, 24), VuWidgetStyle.Needle, VuNeedleDetailMode.Detailed, level: 0.3f, peakLevel: 0.45f)
 		{
@@ -800,14 +816,40 @@ internal sealed class DemoController : IAsyncDisposable
 	private static DotMatrixDashboard BuildMiniDashboard()
 	{
 		var dashboard = new DotMatrixDashboard();
-		dashboard.AddWidget(new TextWidget("row1", new DisplayZone(0, 0, 128, 4), ["mini dashboard widget row 1 rotates"], TextOverflowMode.Rotate) { OverflowStepPixels = 1, FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row2", new DisplayZone(0, 4, 128, 4), ["row 2 scrolls with spaces"], TextOverflowMode.Scroll) { OverflowStepPixels = 1, ScrollPadding = 6, FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row3", new DisplayZone(0, 8, 128, 4), ["row 3"], TextOverflowMode.None) { FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row4", new DisplayZone(0, 12, 128, 4), ["ellipsized widgets still fit"], TextOverflowMode.Ellipsis) { FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row5", new DisplayZone(0, 16, 128, 4), ["dashboard 7"], TextOverflowMode.None) { FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row6", new DisplayZone(0, 20, 128, 4), ["widget layout ok"], TextOverflowMode.None) { FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row7", new DisplayZone(0, 24, 128, 4), ["no overlap allowed"], TextOverflowMode.None) { FontKind = TextFontKind.ProportionalThin });
-		dashboard.AddWidget(new TextWidget("row8", new DisplayZone(0, 28, 128, 4), ["knob = dashboard"], TextOverflowMode.Ellipsis) { FontKind = TextFontKind.ProportionalThin });
+		dashboard.AddWidget(new TextWidget("row1", new DisplayZone(0, 0, 128, 4), ["mini dashboard widget row 1 rotates"], TextOverflowMode.Rotate) { OverflowStepPixels = 1, FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row2", new DisplayZone(0, 4, 128, 4), ["row 2 scrolls with spaces"], TextOverflowMode.Scroll) { OverflowStepPixels = 1, ScrollPadding = 6, FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row3", new DisplayZone(0, 8, 128, 4), ["row 3"], TextOverflowMode.None) { FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row4", new DisplayZone(0, 12, 128, 4), ["ellipsized widgets still fit"], TextOverflowMode.Ellipsis) { FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row5", new DisplayZone(0, 16, 128, 4), ["dashboard 7"], TextOverflowMode.None) { FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row6", new DisplayZone(0, 20, 128, 4), ["widget layout ok"], TextOverflowMode.None) { FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row7", new DisplayZone(0, 24, 128, 4), ["no overlap allowed"], TextOverflowMode.None) { FontKind = TextFontKind.Proportional4 });
+		dashboard.AddWidget(new TextWidget("row8", new DisplayZone(0, 28, 128, 4), ["knob = dashboard"], TextOverflowMode.Ellipsis) { FontKind = TextFontKind.Proportional4 });
+		return dashboard;
+	}
+
+	private static DotMatrixDashboard BuildLargeDashboard()
+	{
+		var dashboard = new DotMatrixDashboard();
+		dashboard.AddWidget(new TextWidget("title", new DisplayZone(0, 0, 128, 12), ["12px Bold Helvetica"], TextOverflowMode.Ellipsis)
+		{
+			FontKind = TextFontKind.Proportional12Bold,
+		});
+		dashboard.AddWidget(new TextWidget("sub", new DisplayZone(0, 12, 128, 12), ["Proportional 12 regular scrolls across the display"], TextOverflowMode.Scroll)
+		{
+			OverflowStepPixels = 1,
+			ScrollPadding = 4,
+			FontKind = TextFontKind.Proportional12,
+		});
+		dashboard.AddWidget(new VuWidget("vuL", new DisplayZone(0, 24, 62, 8), VuWidgetStyle.Bar, level: 0.6f, peakLevel: 0.75f)
+		{
+			PeakHoldFrames = 8,
+			PeakDecayPerFrame = 0.025f,
+		});
+		dashboard.AddWidget(new VuWidget("vuR", new DisplayZone(66, 24, 62, 8), VuWidgetStyle.Bar, level: 0.4f, peakLevel: 0.55f, invert: true)
+		{
+			PeakHoldFrames = 8,
+			PeakDecayPerFrame = 0.025f,
+		});
 		return dashboard;
 	}
 
@@ -866,21 +908,6 @@ internal sealed class DemoController : IAsyncDisposable
 	}
 
 	// ── Helpers ─────────────────────────────────────────────────────────────
-
-	/// <summary>
-	/// Builds a surjective mapping from <paramref name="sourceCount"/> indices to
-	/// <paramref name="targetCount"/> indices, randomised with the supplied RNG.
-	/// </summary>
-	private static int[] BuildMapping(Random rng, int sourceCount, int targetCount)
-	{
-		var map = new int[sourceCount];
-		for (var i = 0; i < sourceCount; i++)
-		{
-			map[i] = rng.Next(targetCount);
-		}
-
-		return map;
-	}
 
 	private static PadColor GetPadBaseColor(int rawPadIndex)
 	{
@@ -961,44 +988,14 @@ internal sealed class DemoController : IAsyncDisposable
 	private void PrintMappings()
 	{
 		_logger.LogInformation("=== Maschine Mikro MK3 Reactive Demo ===");
-		_logger.LogInformation("(All mappings are fixed for seed 42)");
 		_logger.LogInformation("Behavior:");
 		_logger.LogInformation("  Button press  -> cycles brightness: off -> mid -> full");
-		_logger.LogInformation("  Pad press     -> restores that pad's startup color");
+		_logger.LogInformation("  Pad press     -> flash white on press, restore color on release");
 		_logger.LogInformation("  Knob          -> selects the active Dashboard by absolute position");
 		_logger.LogInformation("  Logo button   -> toggles Dashboard invert mode");
 		_logger.LogInformation("  Slider        -> updates strip LEDs and logs position");
 		_logger.LogInformation("  Dashboard     -> whole display made of non-overlapping Widgets");
 		_logger.LogInformation("  Demo pages     -> {DashboardCount} Dashboards available", _dashboards.Length);
-
-		_logger.LogInformation("Buttons -> Pads (reserved random map for future effects):");
-		for (var start = 0; start < MaschineDeviceConstants.MikroMk3ButtonCount; start += 9)
-		{
-			var line = new StringBuilder();
-			for (var b = start; b < Math.Min(start + 9, MaschineDeviceConstants.MikroMk3ButtonCount); b++)
-			{
-				line.Append($"  B{b,2}->P{_buttonToPad[b]}");
-			}
-			_logger.LogInformation("{Line}", line.ToString());
-		}
-
-		_logger.LogInformation("Pads -> Buttons (reserved random map for future effects):");
-		for (var start = 0; start < MaschineDeviceConstants.MikroMk3PadCount; start += 8)
-		{
-			var line = new StringBuilder();
-			for (var p = start; p < Math.Min(start + 8, MaschineDeviceConstants.MikroMk3PadCount); p++)
-			{
-				line.Append($"  P{p,2}->B{_padToButton[p],2}");
-			}
-			_logger.LogInformation("{Line}", line.ToString());
-		}
-
-		var encoderLine = new StringBuilder("Encoders -> Pads (reserved random map for future effects):");
-		for (var e = 0; e < MaschineDeviceConstants.MikroMk3EncoderCount; e++)
-		{
-			encoderLine.Append($"  E{e}->P{_encoderToPad[e]}");
-		}
-		_logger.LogInformation("{Line}", encoderLine.ToString());
 	}
 }
 

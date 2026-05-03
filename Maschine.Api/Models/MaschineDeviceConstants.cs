@@ -19,4 +19,11 @@ public static class MaschineDeviceConstants
 
 	/// <summary>Number of rotary encoders on the Mikro MK3.</summary>
 	public const int MikroMk3EncoderCount = 9;
+
+	/// <summary>
+	/// Number of physical touch-strip LEDs on the Mikro MK3.
+	/// These occupy the first 25 of the 35 strip slots in the unified light packet
+	/// (light IDs 55–79); slots 80–89 are unused padding.
+	/// </summary>
+	public const int MikroMk3TouchStripLedCount = 25;
 }

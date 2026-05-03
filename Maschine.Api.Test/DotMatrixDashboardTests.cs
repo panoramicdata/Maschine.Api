@@ -104,28 +104,64 @@ public sealed class DotMatrixDashboardTests
 	}
 
 	[Fact]
-	public void TextWidget_DefaultsToHighResolutionProportionalClassic()
+	public void TextWidget_DefaultsToProportional8()
 	{
 		var widget = new TextWidget("txt", new DisplayZone(0, 0, 32, 8), ["ABC"]);
 
-		widget.FontKind.Should().Be(TextFontKind.ProportionalClassic);
+		widget.FontKind.Should().Be(TextFontKind.Proportional8);
 	}
 
 	[Fact]
-	public void BuildBitmap_ProportionalClassicDiffersFromProportionalThin()
+	public void BuildBitmap_Proportional8BoldDiffersFromProportional8()
 	{
-		var classic = new DotMatrixDashboard();
-		classic.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 32, 8), ["ABC"], TextOverflowMode.None)
+		var bold = new DotMatrixDashboard();
+		bold.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 32, 8), ["ABC"], TextOverflowMode.None)
 		{
-			FontKind = TextFontKind.ProportionalClassic,
+			FontKind = TextFontKind.Proportional8Bold,
 		});
 
-		var thin = new DotMatrixDashboard();
-		thin.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 32, 8), ["ABC"], TextOverflowMode.None)
+		var regular = new DotMatrixDashboard();
+		regular.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 32, 8), ["ABC"], TextOverflowMode.None)
 		{
-			FontKind = TextFontKind.ProportionalThin,
+			FontKind = TextFontKind.Proportional8,
 		});
 
-		classic.BuildBitmap().Should().NotEqual(thin.BuildBitmap());
+		bold.BuildBitmap().Should().NotEqual(regular.BuildBitmap());
+	}
+
+	[Fact]
+	public void BuildBitmap_Proportional12BoldDiffersFromProportional12()
+	{
+		var bold = new DotMatrixDashboard();
+		bold.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 128, 12), ["MIXED 123"], TextOverflowMode.None)
+		{
+			FontKind = TextFontKind.Proportional12Bold,
+		});
+
+		var regular = new DotMatrixDashboard();
+		regular.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 128, 12), ["MIXED 123"], TextOverflowMode.None)
+		{
+			FontKind = TextFontKind.Proportional12,
+		});
+
+		bold.BuildBitmap().Should().NotEqual(regular.BuildBitmap());
+	}
+
+	[Fact]
+	public void BuildBitmap_AutoFont_Selects12WhenZoneAllows()
+	{
+		var auto = new DotMatrixDashboard();
+		auto.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 128, 12), ["AUTO"], TextOverflowMode.None)
+		{
+			FontKind = TextFontKind.Auto,
+		});
+
+		var explicit12 = new DotMatrixDashboard();
+		explicit12.AddWidget(new TextWidget("txt", new DisplayZone(0, 0, 128, 12), ["AUTO"], TextOverflowMode.None)
+		{
+			FontKind = TextFontKind.Proportional12,
+		});
+
+		auto.BuildBitmap().Should().Equal(explicit12.BuildBitmap());
 	}
 }

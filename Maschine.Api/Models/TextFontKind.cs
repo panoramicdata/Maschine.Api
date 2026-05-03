@@ -11,22 +11,27 @@ public enum TextFontKind
 	Auto = 0,
 
 	/// <summary>
-	/// Force a thinner fixed-width style.
+	/// Use the proportional 4x4 font.
 	/// </summary>
-	FixedThin = 1,
+	Proportional4 = 1,
 
 	/// <summary>
-	/// Force the classic fixed-width 8x8 style.
+	/// Use the proportional 8x8 font.
 	/// </summary>
-	FixedClassic = 2,
+	Proportional8 = 2,
 
 	/// <summary>
-	/// Use a proportional thin style.
+	/// Use the bold proportional 8x8 font.
 	/// </summary>
-	ProportionalThin = 3,
+	Proportional8Bold = 3,
 
 	/// <summary>
-	/// Use a proportional classic 8x8 style.
+	/// Use the proportional 12px font.
 	/// </summary>
-	ProportionalClassic = 4,
+	Proportional12 = 4,
+
+	/// <summary>
+	/// Use the bold proportional 12px font.
+	/// </summary>
+	Proportional12Bold = 5,
 }

@@ -35,7 +35,7 @@ public sealed class TextWidget : DotMatrixWidgetBase
 	/// <summary>
 	/// Built-in font selection used when <see cref="Font"/> is not set.
 	/// </summary>
-	public TextFontKind FontKind { get; set; } = TextFontKind.ProportionalClassic;
+	public TextFontKind FontKind { get; set; } = TextFontKind.Proportional8;
 
 	/// <summary>
 	/// Optional custom font. When provided, this takes precedence over <see cref="FontKind"/>.

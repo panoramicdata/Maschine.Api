@@ -32,7 +32,18 @@ internal sealed class HidSharpDevice : IHidDevice
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		var buffer = new byte[64];
-		var bytesRead = await _stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+		int bytesRead;
+		try
+		{
+			bytesRead = await _stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+		}
+		catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+		{
+			// HidSharp closes the stream to unblock a pending read during shutdown;
+			// translate to the expected cancellation exception.
+			throw new OperationCanceledException(cancellationToken);
+		}
+
 		if (bytesRead == buffer.Length)
 		{
 			return buffer;

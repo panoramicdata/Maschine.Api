@@ -272,26 +272,36 @@ public sealed class DotMatrixDashboard
 		if (text.FontKind == TextFontKind.Auto)
 		{
 			var targetLines = Math.Max(1, requestedLineCount);
-			var classicFits = zone.Height >= (BuiltInFonts.ProportionalClassic.Height * targetLines);
-			return ScaleFontToZone(classicFits ? BuiltInFonts.ProportionalClassic : BuiltInFonts.ProportionalThin, zone, requestedLineCount);
+			if (zone.Height >= (DisplayFont.Font12Height * targetLines))
+			{
+				return ScaleFontToZone(BuiltInFonts.Proportional12, zone, requestedLineCount);
+			}
+
+			var canUseStandardHeight = zone.Height >= (DisplayFont.Font8Height * targetLines);
+			return ScaleFontToZone(canUseStandardHeight ? BuiltInFonts.Proportional8 : BuiltInFonts.Proportional4, zone, requestedLineCount);
 		}
 
-		if (text.FontKind == TextFontKind.FixedClassic)
+		if (text.FontKind == TextFontKind.Proportional8)
 		{
-			return ScaleFontToZone(BuiltInFonts.FixedClassic, zone, requestedLineCount);
+			return ScaleFontToZone(BuiltInFonts.Proportional8, zone, requestedLineCount);
 		}
 
-		if (text.FontKind == TextFontKind.FixedThin)
+		if (text.FontKind == TextFontKind.Proportional8Bold)
 		{
-			return ScaleFontToZone(BuiltInFonts.FixedThin, zone, requestedLineCount);
+			return ScaleFontToZone(BuiltInFonts.Proportional8Bold, zone, requestedLineCount);
 		}
 
-		if (text.FontKind == TextFontKind.ProportionalClassic)
+		if (text.FontKind == TextFontKind.Proportional12)
 		{
-			return ScaleFontToZone(BuiltInFonts.ProportionalClassic, zone, requestedLineCount);
+			return ScaleFontToZone(BuiltInFonts.Proportional12, zone, requestedLineCount);
 		}
 
-		return ScaleFontToZone(BuiltInFonts.ProportionalThin, zone, requestedLineCount);
+		if (text.FontKind == TextFontKind.Proportional12Bold)
+		{
+			return ScaleFontToZone(BuiltInFonts.Proportional12Bold, zone, requestedLineCount);
+		}
+
+		return ScaleFontToZone(BuiltInFonts.Proportional4, zone, requestedLineCount);
 	}
 
 	private static ResolvedFont ScaleFontToZone(IFont font, DisplayZone zone, int requestedLineCount)
@@ -359,14 +369,14 @@ public sealed class DotMatrixDashboard
 
 	private static FontGlyph CreateMissingGlyph(IFont font)
 	{
-		var width = Math.Clamp(font.FixedWidth ?? 4, 3, 8);
+		var width = Math.Clamp(font.FixedWidth ?? 4, 3, 16);
 		var height = Math.Max(3, font.Height);
-		var rows = new byte[height];
-		var fullMask = (byte)((1 << width) - 1);
+		var rows = new ushort[height];
+		var fullMask = (ushort)(width >= 16 ? 0xFFFF : ((1 << width) - 1));
 
 		for (var y = 0; y < height; y++)
 		{
-			var row = (byte)0;
+			var row = (ushort)0;
 			if (y == 0 || y == height - 1)
 			{
 				row = fullMask;
@@ -374,10 +384,10 @@ public sealed class DotMatrixDashboard
 			else
 			{
 				row |= 0x01;
-				row |= (byte)(1 << (width - 1));
+				row |= (ushort)(1 << (width - 1));
 				if (y == 1 || y == height - 2)
 				{
-					row |= (byte)(1 << (width / 2));
+					row |= (ushort)(1 << (width / 2));
 				}
 			}
 
@@ -529,10 +539,10 @@ public sealed class DotMatrixDashboard
 	{
 		for (var row = 0; row < glyph.Height; row++)
 		{
-			var rowByte = glyph.Rows[row];
+			var rowBits = glyph.Rows[row];
 			for (var col = 0; col < glyph.Width; col++)
 			{
-				if (((rowByte >> col) & 1) == 0)
+				if (((rowBits >> col) & 1) == 0)
 				{
 					continue;
 				}
@@ -679,9 +689,25 @@ public sealed class DotMatrixDashboard
 		if (vu.ShowPeakMarker && vu.PeakLevel is float peak)
 		{
 			var peakAngle = DegreesToRadians(startAngle + (Math.Clamp(peak, 0f, 1f) * sweepAngle));
-			var px = centerX + (int)Math.Round(Math.Cos(peakAngle) * radius);
-			var py = centerY - (int)Math.Round(Math.Sin(peakAngle) * radius);
-			SetPixel(bitmap, px, py, on);
+			RenderNeedlePeakArc(bitmap, centerX, centerY, radius, peakAngle, on);
+		}
+	}
+
+	private static void RenderNeedlePeakArc(byte[] bitmap, int centerX, int centerY, int radius, double peakAngle, bool on)
+	{
+		const double HalfSpanRadians = Math.PI / 48.0; // ~3.75° each side of the peak
+		var arcStart = peakAngle - HalfSpanRadians;
+		var arcEnd = peakAngle + HalfSpanRadians;
+		var angleDelta = arcEnd - arcStart;
+		var steps = Math.Max(1, (int)Math.Ceiling(Math.Abs(angleDelta) / (Math.PI / 180.0))); // ~1° steps
+
+		for (var i = 0; i <= steps; i++)
+		{
+			var t = i / (double)steps;
+			var angle = arcStart + (angleDelta * t);
+			var x = centerX + (int)Math.Round(Math.Cos(angle) * radius);
+			var y = centerY - (int)Math.Round(Math.Sin(angle) * radius);
+			SetPixel(bitmap, x, y, on);
 		}
 	}
 

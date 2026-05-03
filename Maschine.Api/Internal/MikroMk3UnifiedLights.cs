@@ -14,6 +14,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 	private const int LightDataLength = 90;  // 39 buttons + 16 pads + 35 strip
 	private const int ReportLength = 1 + LightDataLength;
 	private const int FirstPadLightId = 39;
+	private const int FirstStripLightId = 55;
 
 	// Pad index (0-15) -> hardware light ID order used by Mikro MK3.
 	private static readonly byte[] s_padIndexToLightId =
@@ -153,6 +154,141 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 			for (var i = 0; i < s_padIndexToLightId.Length; i++)
 			{
 				var offset = 1 + s_padIndexToLightId[i];
+				if (_report[offset] != value)
+				{
+					_report[offset] = value;
+					changed = true;
+				}
+			}
+
+			if (!changed)
+			{
+				return;
+			}
+
+			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_gate.Release();
+		}
+	}
+
+	internal async Task SetStripLedAsync(int position, byte brightness, CancellationToken cancellationToken)
+	{
+		if (position < 0 || position >= MaschineDeviceConstants.MikroMk3TouchStripLedCount)
+		{
+			throw new ArgumentOutOfRangeException(nameof(position), position,
+				$"Strip LED position must be 0–{MaschineDeviceConstants.MikroMk3TouchStripLedCount - 1}.");
+		}
+
+		var value = ScaleButtonBrightness(brightness);
+
+		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var offset = 1 + FirstStripLightId + position;
+			if (_report[offset] == value)
+			{
+				return;
+			}
+
+			_report[offset] = value;
+			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_gate.Release();
+		}
+	}
+
+	internal async Task SetAllStripLedsAsync(byte brightness, CancellationToken cancellationToken)
+	{
+		var value = ScaleButtonBrightness(brightness);
+
+		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var changed = false;
+			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
+			{
+				var offset = 1 + FirstStripLightId + i;
+				if (_report[offset] != value)
+				{
+					_report[offset] = value;
+					changed = true;
+				}
+			}
+
+			if (!changed)
+			{
+				return;
+			}
+
+			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_gate.Release();
+		}
+	}
+
+	internal async Task SetStripLedsAsync(IReadOnlyList<byte> brightnessValues, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(brightnessValues);
+		if (brightnessValues.Count != MaschineDeviceConstants.MikroMk3TouchStripLedCount)
+		{
+			throw new ArgumentException(
+				$"Expected {MaschineDeviceConstants.MikroMk3TouchStripLedCount} brightness values, got {brightnessValues.Count}.",
+				nameof(brightnessValues));
+		}
+
+		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var changed = false;
+			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
+			{
+				var value = ScaleButtonBrightness(brightnessValues[i]);
+				var offset = 1 + FirstStripLightId + i;
+				if (_report[offset] != value)
+				{
+					_report[offset] = value;
+					changed = true;
+				}
+			}
+
+			if (!changed)
+			{
+				return;
+			}
+
+			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_gate.Release();
+		}
+	}
+
+	internal async Task SetStripLedsColorAsync(IReadOnlyList<PadColor> colors, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(colors);
+		if (colors.Count != MaschineDeviceConstants.MikroMk3TouchStripLedCount)
+		{
+			throw new ArgumentException(
+				$"Expected {MaschineDeviceConstants.MikroMk3TouchStripLedCount} color values, got {colors.Count}.",
+				nameof(colors));
+		}
+
+		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var changed = false;
+			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
+			{
+				var value = EncodePadColor(colors[i]);
+				var offset = 1 + FirstStripLightId + i;
 				if (_report[offset] != value)
 				{
 					_report[offset] = value;

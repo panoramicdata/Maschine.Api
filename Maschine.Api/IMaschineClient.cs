@@ -23,6 +23,9 @@ public interface IMaschineClient : IDisposable
 	/// <summary>Encoder events.</summary>
 	IEncoders Encoders { get; }
 
+	/// <summary>Touch-strip LED controls.</summary>
+	ITouchStrip TouchStrip { get; }
+
 	/// <summary>
 	/// Starts the background HID read loop and connects to the device.
 	/// </summary>
