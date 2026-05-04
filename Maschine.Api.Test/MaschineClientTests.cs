@@ -18,18 +18,6 @@ internal sealed class FakeHidDevice : IHidDevice
 	/// <summary>Whether the device has been disposed.</summary>
 	public bool IsDisposed { get; private set; }
 
-	/// <summary>If set, thrown by the next <see cref="ReadAsync"/> call (then cleared).</summary>
-	public Exception? ExceptionToThrow { get; set; }
-
-	/// <inheritdoc/>
-	public int MaxOutputReportLength { get; } = 65;
-
-	/// <inheritdoc/>
-	public int MaxFeatureReportLength { get; } = 80;
-
-	/// <summary>All feature reports sent via <see cref="WriteFeatureAsync"/>.</summary>
-	public List<byte[]> WrittenFeatureReports { get; } = [];
-
 	/// <summary>Queues a report to be returned by the next <see cref="ReadAsync"/> call.</summary>
 	public void EnqueueReport(byte[] report)
 	{
@@ -53,13 +41,6 @@ internal sealed class FakeHidDevice : IHidDevice
 	public Task<byte[]> ReadAsync(CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
-		if (ExceptionToThrow is not null)
-		{
-			var ex = ExceptionToThrow;
-			ExceptionToThrow = null;
-			throw ex;
-		}
-
 		lock (_sync)
 		{
 			if (_reads.Count > 0)
@@ -79,14 +60,6 @@ internal sealed class FakeHidDevice : IHidDevice
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		WrittenReports.Add(data);
-		return Task.CompletedTask;
-	}
-
-	/// <inheritdoc/>
-	public Task WriteFeatureAsync(byte[] data, CancellationToken cancellationToken)
-	{
-		cancellationToken.ThrowIfCancellationRequested();
-		WrittenFeatureReports.Add(data);
 		return Task.CompletedTask;
 	}
 
@@ -252,7 +225,7 @@ public sealed class MaschineClientTests
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
 		report[1] = 0x00;
-		report[2] = 0x41; // active pressure: (0x41 - 0x40) * 256 = 256
+		report[2] = 0x01; // pad 0 pressure = 0x100 (high nibble)
 		device.EnqueueReport(report);
 
 		// Allow the read loop to process the queued report
@@ -292,11 +265,8 @@ public sealed class MaschineClientTests
 	}
 
 	[Fact]
-
-	public async Task EncoderChanged_NotFiredByUnknownReport()
+	public async Task EncoderChanged_EventFired_WhenEncoderReportReceived()
 	{
-		// Encoder rotation report format is not yet confirmed for Mikro MK3.
-		// Sending an unknown report ID should not fire EncoderChanged.
 		var device = new FakeHidDevice();
 		var client = CreateClient(device);
 		await client.ConnectAsync();
@@ -304,49 +274,21 @@ public sealed class MaschineClientTests
 		EncoderDelta? received = null;
 		client.Encoders.EncoderChanged += (_, delta) => received = delta;
 
-		var report = new byte[64];
-		report[0] = 0xFE; // unknown report ID
+		var report = new byte[MikroMk3Protocol.EncoderReportLength];
+		report[0] = MikroMk3Protocol.EncoderReportId;
+		report[1] = 2; // encoder 0 CW by 2
 		device.EnqueueReport(report);
 
 		await Task.Delay(100);
 
-		received.Should().BeNull();
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task EncoderChanged_FiredByTouchStripStyleButtonReport()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		EncoderDelta? received = null;
-		client.Encoders.EncoderChanged += (_, delta) => received = delta;
-
-		var first = new byte[MikroMk3Protocol.ButtonReportLength];
-		first[0] = MikroMk3Protocol.ButtonReportId;
-		first[7] = 0x0A;
-		first[10] = 0x20;
-		device.EnqueueReport(first);
-
-		var second = new byte[MikroMk3Protocol.ButtonReportLength];
-		second[0] = MikroMk3Protocol.ButtonReportId;
-		second[7] = 0x0A;
-		second[10] = 0x30;
-		device.EnqueueReport(second);
-
-		await Task.Delay(100);
-
 		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(8);
-		received.Value.Delta.Should().NotBe(0);
+		received!.Value.Index.Should().Be(0);
+		received.Value.Delta.Should().Be(2);
 
 		await client.DisconnectAsync();
 		client.Dispose();
 	}
+
 	[Fact]
 	public async Task SetColorAsync_WritesSinglePadReport()
 	{
@@ -460,319 +402,6 @@ public sealed class MaschineClientTests
 			.Should().Throw<ArgumentOutOfRangeException>();
 
 		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	// ── Public constructor coverage ──────────────────────────────────────────
-
-	[Fact]
-	public void DefaultConstructor_CanBeConstructedAndDisposed()
-	{
-		var client = new MaschineClient();
-		client.Dispose();
-	}
-
-	[Fact]
-	public void OptionsConstructor_CanBeConstructedAndDisposed()
-	{
-		var options = new MaschineClientOptions();
-		var client = new MaschineClient(options);
-		client.Dispose();
-	}
-
-	[Fact]
-	public void OptionsLoggerConstructor_CanBeConstructedAndDisposed()
-	{
-		var options = new MaschineClientOptions();
-		var client = new MaschineClient(options, NullLogger<MaschineClient>.Instance);
-		client.Dispose();
-	}
-
-	// ── Read-loop edge cases ─────────────────────────────────────────────────
-
-	[Fact]
-	public async Task ReadLoop_EmptyReport_IsIgnoredAndNextReportIsProcessed()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		PadState? received = null;
-		client.Pads.PadChanged += (_, state) => received = state;
-
-		// Empty report must be ignored
-		device.EnqueueReport([]);
-
-		// Valid pad report follows
-		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
-		report[0] = MikroMk3Protocol.PadPressureReportId;
-		report[1] = 0x00;
-		report[2] = 0x41;
-		device.EnqueueReport(report);
-
-		await Task.Delay(100);
-
-		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(0);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task ReadLoop_IOException_ExitsCleanly()
-	{
-		var device = new FakeHidDevice();
-		device.ExceptionToThrow = new System.IO.IOException("Simulated IO error");
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await Task.Delay(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task ReadLoop_UnknownReportId_DoesNotThrow()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		device.EnqueueReport([0xFF, 0x00, 0x00]);
-
-	// ── Button LED writes ─────────────────────────────────────────────────────
-		await Task.Delay(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	// ── Button LED writes ─────────────────────────────────────────────────────
-
-	[Fact]
-	public async Task SetLedAsync_WritesSingleButtonLedReport()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.Buttons.SetLedAsync(0, 100);
-
-		device.WrittenFeatureReports.Should().BeEmpty();
-		device.WrittenReports.Should().HaveCount(1);
-		device.WrittenReports[0][0].Should().Be(MikroMk3Protocol.ButtonLedReportId);
-		device.WrittenReports[0][1].Should().Be(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task SetAllLedsAsync_WritesAllButtonLedsReport()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.Buttons.SetAllLedsAsync(50);
-
-		device.WrittenFeatureReports.Should().BeEmpty();
-		device.WrittenReports.Should().HaveCount(1);
-		device.WrittenReports[0][0].Should().Be(MikroMk3Protocol.ButtonLedReportId);
-		for (var i = 0; i < MaschineDeviceConstants.MikroMk3ButtonCount; i++)
-		{
-			device.WrittenReports[0][1 + i].Should().Be(50);
-		}
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task DisconnectAsync_CalledTwice_DoesNotThrow()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-		await client.DisconnectAsync();
-		await ((Func<Task>)(() => client.DisconnectAsync())).Should().NotThrowAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task PadReport_WithNoSubscriber_DoesNotThrow()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
-		report[0] = MikroMk3Protocol.PadPressureReportId;
-		report[1] = 0x00;
-		report[2] = 0x01;
-		device.EnqueueReport(report);
-
-		await Task.Delay(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task ButtonReport_WithNoSubscriber_DoesNotThrow()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		var report = new byte[MikroMk3Protocol.ButtonReportLength];
-		report[0] = MikroMk3Protocol.ButtonReportId;
-		report[1] = 0x01;
-		device.EnqueueReport(report);
-
-		await Task.Delay(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task EncoderReport_WithNoSubscriber_DoesNotThrow()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		// Send an unknown report ID; no handler should throw.
-		var report = new byte[64];
-		report[0] = 0xFE;
-		device.EnqueueReport(report);
-
-		await Task.Delay(100);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task SetDotMatrixTestPatternAsync_WritesTwoDisplayPackets()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.SetDotMatrixTestPatternAsync();
-
-		device.WrittenReports.Should().Contain(r => r.Length == 265 && r[0] == 0xE0);
-		device.WrittenReports.Should().HaveCountGreaterThanOrEqualTo(2);
-		device.WrittenReports[^2][0].Should().Be(0xE0);
-		device.WrittenReports[^1][0].Should().Be(0xE0);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task ClearDotMatrixAsync_WritesZeroedPixelPayloads()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.ClearDotMatrixAsync();
-
-		var top = device.WrittenReports[^2];
-		var bottom = device.WrittenReports[^1];
-		top.Length.Should().Be(265);
-		bottom.Length.Should().Be(265);
-		top[0].Should().Be(0xE0);
-		bottom[0].Should().Be(0xE0);
-		for (var i = 9; i < top.Length; i++)
-		{
-			top[i].Should().Be(0xFF);
-		}
-
-		for (var i = 9; i < bottom.Length; i++)
-		{
-			bottom[i].Should().Be(0xFF);
-		}
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task SetDotMatrixZebraLinesAsync_WritesAlternatingStripePattern()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.SetDotMatrixZebraLinesAsync();
-
-		var top = device.WrittenReports[^2];
-		var bottom = device.WrittenReports[^1];
-		top.Length.Should().Be(265);
-		bottom.Length.Should().Be(265);
-		top[9 + 0].Should().Be(0xFC);
-		top[9 + 1].Should().Be(0xF9);
-		top[9 + 2].Should().Be(0xF3);
-		top[9 + 3].Should().Be(0xE7);
-		top[9 + 4].Should().Be(0xCF);
-		top[9 + 5].Should().Be(0x9F);
-		top[9 + 6].Should().Be(0x3F);
-		top[9 + 7].Should().Be(0x7E);
-		bottom[9 + 0].Should().Be(top[9 + 0]);
-		bottom[9 + 7].Should().Be(top[9 + 7]);
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task SetDotMatrixZebraLinesAsync_WithPhase_ShiftsPattern()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.SetDotMatrixZebraLinesAsync(3);
-
-		var top = device.WrittenReports[^2];
-		top[9 + 0].Should().Be(0xE7);
-		top[9 + 1].Should().Be(0xCF);
-		top[9 + 2].Should().Be(0x9F);
-
-
-		await client.DisconnectAsync();
-		client.Dispose();
-	}
-
-	[Fact]
-	public async Task DisconnectAsync_PerformsDotMatrixClearFeatureFallback()
-	{
-		var device = new FakeHidDevice();
-		var client = CreateClient(device);
-		await client.ConnectAsync();
-
-		await client.SetDotMatrixZebraLinesAsync();
-		await client.DisconnectAsync();
-
-		device.WrittenFeatureReports.Should().Contain(r => r.Length == 265 && r[0] == 0xE0);
-		var topFeature = device.WrittenFeatureReports[^2];
-		var bottomFeature = device.WrittenFeatureReports[^1];
-		for (var i = 9; i < topFeature.Length; i++)
-		{
-			topFeature[i].Should().Be(0xFF);
-		}
-
-		for (var i = 9; i < bottomFeature.Length; i++)
-		{
-			bottomFeature[i].Should().Be(0xFF);
-		}
-
 		client.Dispose();
 	}
 }

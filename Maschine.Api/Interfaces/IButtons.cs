@@ -7,14 +7,8 @@ namespace Maschine.Api.Interfaces;
 /// </summary>
 public interface IButtons
 {
-	/// <summary>Raised when any button is pressed or released.</summary>
-	event EventHandler<ButtonState> ButtonChanged;
-
-	/// <summary>Raised when any button transitions to pressed.</summary>
-	event EventHandler<ButtonState>? ButtonPressed;
-
-	/// <summary>Raised when any button transitions to released.</summary>
-	event EventHandler<ButtonState>? ButtonReleased;
+	/// <summary>Raised for high-level key actions according to configured key modes.</summary>
+	event EventHandler<KeyEvent>? KeyEvent;
 
 	/// <summary>
 	/// Raised when the volume encoder's capacitive touch sensor or absolute position changes.
@@ -28,6 +22,14 @@ public interface IButtons
 	/// <summary>Returns the last known state for a single button.</summary>
 	/// <param name="buttonIndex">Zero-based button index (0–<see cref="MaschineDeviceConstants.MikroMk3ButtonCount"/> − 1).</param>
 	ButtonState GetState(int buttonIndex);
+
+	/// <summary>Returns whether a key is currently logically on in the key-mode engine.</summary>
+	/// <param name="button">Button enum value.</param>
+	bool IsKeyOn(MikroMk3Button button);
+
+	/// <summary>Returns whether a key is currently physically pressed.</summary>
+	/// <param name="button">Button enum value.</param>
+	bool IsKeyPressed(MikroMk3Button button);
 
 	/// <summary>Sets the LED brightness for a single button.</summary>
 	/// <param name="buttonIndex">Zero-based button index (0–<see cref="MaschineDeviceConstants.MikroMk3ButtonCount"/> − 1).</param>

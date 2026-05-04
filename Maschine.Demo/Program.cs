@@ -13,7 +13,21 @@ var cancelPressCount = 0;
 var options = new MaschineClientOptions
 {
 	ForceUnifiedLightOutput = true,
+	KeyModes = KeyModeDefaults.Create(),
+	KeyRadioButtonGroups =
+	[
+		new RadioButtonGroupOptions
+		{
+			Mode = RadioButtonGroupMode.AlwaysOneOn,
+			Keys = [MikroMk3Button.PadMode, MikroMk3Button.Keyboard, MikroMk3Button.Chords],
+		},
+	],
 };
+
+options.KeyModes[MikroMk3Button.MachineLogo] = KeyMode.FireEarly;
+options.KeyModes[MikroMk3Button.PadMode] = KeyMode.FireEarly;
+options.KeyModes[MikroMk3Button.Keyboard] = KeyMode.FireEarly;
+options.KeyModes[MikroMk3Button.Chords] = KeyMode.FireEarly;
 
 static int? ParseIntOption(string[] sourceArgs, string optionName)
 {

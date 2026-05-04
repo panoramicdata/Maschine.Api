@@ -35,4 +35,26 @@ public sealed class MaschineClientOptions
 	/// Useful when reverse-engineering report IDs/lengths on a live device.
 	/// </summary>
 	public bool TraceInputReports { get; set; }
+
+	/// <summary>
+	/// Per-key mode map for LED-backed keys.
+	/// The library default uses latch behavior for most keys, with specific overrides.
+	/// </summary>
+	public Dictionary<MikroMk3Button, KeyMode> KeyModes { get; set; } = KeyModeDefaults.Create();
+
+	/// <summary>
+	/// Optional key radio button groups applied by the key-mode engine.
+	/// </summary>
+	public List<RadioButtonGroupOptions> KeyRadioButtonGroups { get; set; } = [];
+
+	/// <summary>
+	/// Global fire-mode LED flash duration in milliseconds.
+	/// </summary>
+	public int KeyFireFlashDurationMs { get; set; } = 200;
+
+	/// <summary>
+	/// Optional per-key overrides for fire-mode flash duration in milliseconds.
+	/// Set an entry to null to use <see cref="KeyFireFlashDurationMs"/>.
+	/// </summary>
+	public Dictionary<MikroMk3Button, int?> KeyFireFlashDurationOverridesMs { get; set; } = [];
 }

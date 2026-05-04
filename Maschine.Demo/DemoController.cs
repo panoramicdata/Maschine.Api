@@ -3,7 +3,6 @@ using Maschine.Api.Interfaces;
 using Maschine.Api.Models;
 using Maschine.Api.Widgets;
 using Microsoft.Extensions.Logging;
-using System.Globalization;
 
 namespace Maschine.Demo;
 
@@ -17,10 +16,7 @@ namespace Maschine.Demo;
 /// </summary>
 internal sealed class DemoController : IAsyncDisposable
 {
-	private static readonly byte[] s_buttonBrightnessCycle = [0, 64, 127, 255];
 	private const int TouchStripEncoderIndex = 8;
-	private const byte ActiveModeButtonBrightness = 127;
-	private const byte InactiveModeButtonBrightness = 0;
 
 	// ── Per-pad colour palette: one entry per pad, maps to all 16 device palette slots ────────
 
@@ -80,7 +76,6 @@ internal sealed class DemoController : IAsyncDisposable
 
 	// ── Per-element state ───────────────────────────────────────────────────
 
-	private readonly byte[] _buttonBrightness;
 	private readonly bool[] _padDown;
 	private readonly DateTime[] _lastPadDownUtc;
 	private readonly DateTime[] _lastEncoderLogUtc;
@@ -111,7 +106,6 @@ internal sealed class DemoController : IAsyncDisposable
 		_client = client;
 		_logger = logger;
 
-		_buttonBrightness = new byte[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_padDown = new bool[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastPadDownUtc = new DateTime[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastEncoderLogUtc = new DateTime[MaschineDeviceConstants.MikroMk3EncoderCount];
@@ -141,9 +135,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 		if (!runFullBrightness && !runPadColorSpace)
 		{
-			_buttons.ButtonChanged += OnButtonChanged;
-			_buttons.ButtonPressed += OnButtonPressed;
-			_buttons.ButtonReleased += OnButtonReleased;
+			_buttons.KeyEvent += OnKeyEvent;
 			_buttons.EncoderTouchChanged += OnEncoderTouchChanged;
 			_pads.PadChanged += OnPadChanged;
 			_encoders.EncoderChanged += OnEncoderChanged;
@@ -215,9 +207,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 		if (_subscribed && _buttons is not null && _pads is not null && _encoders is not null)
 		{
-			_buttons.ButtonChanged -= OnButtonChanged;
-			_buttons.ButtonPressed -= OnButtonPressed;
-			_buttons.ButtonReleased -= OnButtonReleased;
+			_buttons.KeyEvent -= OnKeyEvent;
 			_buttons.EncoderTouchChanged -= OnEncoderTouchChanged;
 			_pads.PadChanged -= OnPadChanged;
 			_encoders.EncoderChanged -= OnEncoderChanged;
@@ -253,9 +243,7 @@ internal sealed class DemoController : IAsyncDisposable
 	{
 		if (_subscribed && _buttons is not null && _pads is not null && _encoders is not null)
 		{
-			_buttons.ButtonChanged -= OnButtonChanged;
-			_buttons.ButtonPressed -= OnButtonPressed;
-			_buttons.ButtonReleased -= OnButtonReleased;
+			_buttons.KeyEvent -= OnKeyEvent;
 			_buttons.EncoderTouchChanged -= OnEncoderTouchChanged;
 			_pads.PadChanged -= OnPadChanged;
 			_encoders.EncoderChanged -= OnEncoderChanged;
@@ -292,16 +280,20 @@ internal sealed class DemoController : IAsyncDisposable
 		}
 	}
 
-	private void OnButtonChanged(object? sender, Maschine.Api.Models.ButtonState state)
+	private void OnKeyEvent(object? sender, KeyEvent evt)
 	{
-		if (!state.IsPressed)
+		if (_buttons is null)
 		{
-			return; // act on press only
+			return;
 		}
 
-		var buttonDescriptor = FormatButtonState(state);
+		if (evt.Type == KeyEventType.KeyDown || evt.Type == KeyEventType.KeyUp)
+		{
+			_logger.LogInformation("Key edge: {Button} -> {Type}", evt.Button, evt.Type);
+			return;
+		}
 
-		if (state.Index == (int)MikroMk3Button.MachineLogo)
+		if (evt.Type == KeyEventType.KeyPressed && evt.Button == MikroMk3Button.MachineLogo)
 		{
 			bool inverted;
 			lock (_animationSync)
@@ -310,30 +302,20 @@ internal sealed class DemoController : IAsyncDisposable
 				inverted = _isDashboardInverted;
 			}
 
-			_logger.LogInformation("Button action: {ButtonDescriptor} -> Dashboard invert {InvertState}", buttonDescriptor, inverted ? "ON" : "OFF");
-			_ = TrySetButtonLedAsync(state.Index, inverted ? (byte)127 : (byte)0);
+			_logger.LogInformation("Key action: {Button} -> Dashboard invert {InvertState}", evt.Button, inverted ? "ON" : "OFF");
 			return;
 		}
 
-		if (TryGetInstrumentModeForButton(state.Index, out var requestedMode))
+		if (evt.Type == KeyEventType.KeyPressed && TryGetInstrumentModeForButton((int)evt.Button, out var requestedMode))
 		{
-			_ = HandleInstrumentModeButtonAsync(requestedMode, buttonDescriptor);
+			_ = HandleInstrumentModeButtonAsync(requestedMode, evt.Button.ToString());
 			return;
 		}
 
-		byte nextBrightness;
-		lock (_animationSync)
+		if (evt.Type == KeyEventType.KeyOn || evt.Type == KeyEventType.KeyOff)
 		{
-			var current = _buttonBrightness[state.Index];
-			var currentIndex = Array.IndexOf(s_buttonBrightnessCycle, current);
-			var nextIndex = (currentIndex + 1) % s_buttonBrightnessCycle.Length;
-			nextBrightness = s_buttonBrightnessCycle[nextIndex];
-			_buttonBrightness[state.Index] = nextBrightness;
+			_logger.LogInformation("Key state: {Button} -> {Type}", evt.Button, evt.Type);
 		}
-
-		_logger.LogInformation("Button action: {ButtonDescriptor} -> brightness {Brightness}", buttonDescriptor, nextBrightness);
-		_ = TrySetButtonLedAsync(state.Index, nextBrightness);
-
 	}
 
 	private async Task HandleInstrumentModeButtonAsync(DrumSoundfontPlayer.InstrumentMode requestedMode, string buttonDescriptor)
@@ -361,7 +343,6 @@ internal sealed class DemoController : IAsyncDisposable
 			_logger.LogWarning("Instrument mode switch failed: mode={Mode}, details={Details}", requestedMode, instrumentName);
 		}
 
-		await UpdateInstrumentModeButtonLedsAsync().ConfigureAwait(false);
 	}
 
 	private static bool TryGetInstrumentModeForButton(int buttonIndex, out DrumSoundfontPlayer.InstrumentMode mode)
@@ -387,32 +368,6 @@ internal sealed class DemoController : IAsyncDisposable
 
 		return false;
 	}
-
-	private async Task UpdateInstrumentModeButtonLedsAsync()
-	{
-		if (_buttons is null)
-		{
-			return;
-		}
-
-		var padModeBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.PadMode ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
-		var keyboardBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.Keyboard ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
-		var chordsBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.Chords ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
-
-		_buttonBrightness[(int)MikroMk3Button.PadMode] = padModeBrightness;
-		_buttonBrightness[(int)MikroMk3Button.Keyboard] = keyboardBrightness;
-		_buttonBrightness[(int)MikroMk3Button.Chords] = chordsBrightness;
-
-		await TrySetButtonLedAsync((int)MikroMk3Button.PadMode, padModeBrightness).ConfigureAwait(false);
-		await TrySetButtonLedAsync((int)MikroMk3Button.Keyboard, keyboardBrightness).ConfigureAwait(false);
-		await TrySetButtonLedAsync((int)MikroMk3Button.Chords, chordsBrightness).ConfigureAwait(false);
-	}
-
-	private void OnButtonPressed(object? sender, Maschine.Api.Models.ButtonState state)
-		=> _logger.LogInformation("Button DOWN: {ButtonState}", FormatButtonState(state));
-
-	private void OnButtonReleased(object? sender, Maschine.Api.Models.ButtonState state)
-		=> _logger.LogInformation("Button UP:   {ButtonState}", FormatButtonState(state));
 
 	private void OnPadChanged(object? sender, PadState state)
 	{
@@ -586,10 +541,6 @@ internal sealed class DemoController : IAsyncDisposable
 
 		try
 		{
-			// Write button state first. If button writes force unified-light fallback,
-			// subsequent pad writes populate unified pad slots instead of being cleared.
-			await _buttons.SetAllLedsAsync(0, cancellationToken).ConfigureAwait(false);
-
 			if (_touchStrip is not null)
 			{
 				await _touchStrip.SetAllLedsAsync(0, cancellationToken).ConfigureAwait(false);
@@ -601,14 +552,12 @@ internal sealed class DemoController : IAsyncDisposable
 			}
 			_touchStripLevel = 13;
 			_touchStripRenderedLevel = -1;
-			Array.Fill(_buttonBrightness, (byte)0);
 			if (_drumPlayer is not null)
 			{
 				_ = _drumPlayer.TryActivateMode(_activeInstrumentMode, cycleVariant: false, out var instrumentName, out var variantIndex, out var variantCount);
 				_logger.LogInformation("Initial instrument mode: {Mode}, variant={Variant}/{VariantCount}, instrument={Instrument}", _activeInstrumentMode, variantIndex + 1, variantCount, instrumentName);
 			}
 
-			await UpdateInstrumentModeButtonLedsAsync().ConfigureAwait(false);
 			_drumPlayer?.SetVolumeFromStripLevel(_touchStripLevel);
 			await UpdateTouchStripLedsCoalescedAsync().ConfigureAwait(false);
 		}
@@ -627,7 +576,15 @@ internal sealed class DemoController : IAsyncDisposable
 
 		try
 		{
-			await _buttons.SetAllLedsAsync(buttonBrightness, cancellationToken).ConfigureAwait(false);
+			try
+			{
+				await _buttons.SetAllLedsAsync(buttonBrightness, cancellationToken).ConfigureAwait(false);
+			}
+			catch (InvalidOperationException)
+			{
+				// Key-managed modes can disallow global button writes.
+			}
+
 			await _pads.SetAllColorsAsync(padColor, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex)
@@ -1049,14 +1006,6 @@ internal sealed class DemoController : IAsyncDisposable
 
 	private static string FormatColor(PadColor c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
-	private static string FormatButtonState(Maschine.Api.Models.ButtonState state)
-	{
-		var buttonLabel = state.Button?.GetDisplayNameSingleLine() ?? "Unknown";
-		var buttonEnumName = state.Button?.ToString() ?? "Unknown";
-		var buttonEnumValue = state.Button?.ToCustomNumber().ToString(CultureInfo.InvariantCulture) ?? "n/a";
-		return $"custom={state.Index}, enum={buttonEnumName}({buttonEnumValue}), label={buttonLabel}";
-	}
-
 	private static void InvertBitmap(byte[] bitmap)
 	{
 		for (var i = 0; i < bitmap.Length; i++)
@@ -1110,8 +1059,8 @@ internal sealed class DemoController : IAsyncDisposable
 	{
 		_logger.LogInformation("=== Maschine Mikro MK3 Reactive Demo ===");
 		_logger.LogInformation("Behavior:");
-		_logger.LogInformation("  PAD MODE / KEYBOARD / CHORDS -> radio buttons (one lit), press active mode again to cycle 3 sounds");
-		_logger.LogInformation("  Other buttons -> cycles brightness: off -> mid -> full");
+		_logger.LogInformation("  PAD MODE / KEYBOARD / CHORDS -> API radio group (one lit), press active mode again to cycle 3 sounds");
+		_logger.LogInformation("  Button LEDs are managed by API key modes (except explicit EventsOnly keys)");
 		_logger.LogInformation("  Pad press     -> flash white and trigger a velocity-aware drum hit");
 		_logger.LogInformation("  Knob          -> selects the active Dashboard by absolute position");
 		_logger.LogInformation("  Logo button   -> toggles Dashboard invert mode");

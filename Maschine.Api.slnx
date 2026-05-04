@@ -1,5 +1,4 @@
 <Solution>
   <Project Path="Maschine.Api\Maschine.Api.csproj" />
   <Project Path="Maschine.Api.Test\Maschine.Api.Test.csproj" />
-  <Project Path="Maschine.Demo\Maschine.Demo.csproj" />
 </Solution>
