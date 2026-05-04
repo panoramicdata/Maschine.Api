@@ -691,12 +691,12 @@ public sealed class MaschineClientTests
 		bottom[0].Should().Be(0xE0);
 		for (var i = 9; i < top.Length; i++)
 		{
-			top[i].Should().Be(0);
+			top[i].Should().Be(0xFF);
 		}
 
 		for (var i = 9; i < bottom.Length; i++)
 		{
-			bottom[i].Should().Be(0);
+			bottom[i].Should().Be(0xFF);
 		}
 
 		await client.DisconnectAsync();
@@ -716,14 +716,14 @@ public sealed class MaschineClientTests
 		var bottom = device.WrittenReports[^1];
 		top.Length.Should().Be(265);
 		bottom.Length.Should().Be(265);
-		top[9 + 0].Should().Be(0x03);
-		top[9 + 1].Should().Be(0x06);
-		top[9 + 2].Should().Be(0x0C);
-		top[9 + 3].Should().Be(0x18);
-		top[9 + 4].Should().Be(0x30);
-		top[9 + 5].Should().Be(0x60);
-		top[9 + 6].Should().Be(0xC0);
-		top[9 + 7].Should().Be(0x81);
+		top[9 + 0].Should().Be(0xFC);
+		top[9 + 1].Should().Be(0xF9);
+		top[9 + 2].Should().Be(0xF3);
+		top[9 + 3].Should().Be(0xE7);
+		top[9 + 4].Should().Be(0xCF);
+		top[9 + 5].Should().Be(0x9F);
+		top[9 + 6].Should().Be(0x3F);
+		top[9 + 7].Should().Be(0x7E);
 		bottom[9 + 0].Should().Be(top[9 + 0]);
 		bottom[9 + 7].Should().Be(top[9 + 7]);
 
@@ -741,9 +741,9 @@ public sealed class MaschineClientTests
 		await client.SetDotMatrixZebraLinesAsync(3);
 
 		var top = device.WrittenReports[^2];
-		top[9 + 0].Should().Be(0x18);
-		top[9 + 1].Should().Be(0x30);
-		top[9 + 2].Should().Be(0x60);
+		top[9 + 0].Should().Be(0xE7);
+		top[9 + 1].Should().Be(0xCF);
+		top[9 + 2].Should().Be(0x9F);
 
 
 		await client.DisconnectAsync();
@@ -765,12 +765,12 @@ public sealed class MaschineClientTests
 		var bottomFeature = device.WrittenFeatureReports[^1];
 		for (var i = 9; i < topFeature.Length; i++)
 		{
-			topFeature[i].Should().Be(0);
+			topFeature[i].Should().Be(0xFF);
 		}
 
 		for (var i = 9; i < bottomFeature.Length; i++)
 		{
-			bottomFeature[i].Should().Be(0);
+			bottomFeature[i].Should().Be(0xFF);
 		}
 
 		client.Dispose();
