@@ -1,0 +1,139 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "verify-sf2-downloads",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$dest=Join-Path $env:TEMP 'maschine-sf2-verified'; New-Item -ItemType Directory -Force -Path $dest | Out-Null; $urls=@('https://archive.org/download/LXSpace/LX-Space.sf2','https://archive.org/download/DefinitiveKeys/OKeys.sf2','https://archive.org/download/rhodes_202402/P30_Rhodes.sf2','https://archive.org/download/stereo-grand/STEREO%20GRAND.sf2'); foreach($u in $urls){ $name=([System.Uri]$u).Segments[-1].Trim('/'); $out=Join-Path $dest ($name -replace '%20','_'); try { Invoke-WebRequest -Uri $u -OutFile $out -TimeoutSec 180; Write-Output ('OK '+$u+' bytes='+ (Get-Item $out).Length) } catch { Write-Output ('FAIL '+$u+' :: '+$_.Exception.Message) } }; Write-Output ('DIR '+$dest)"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-sf2-downloads-script",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\verify-sf2-downloads.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "find-keyboard-sf2",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\find-keyboard-sf2.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "find-piano-harpsichord-candidates",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$meta=Invoke-RestMethod -Uri 'https://archive.org/metadata/gabedudleyssf2collection' -TimeoutSec 60; $pick=$meta.files | Where-Object { $_.name -match '\\.sf2$' -and ($_.name -match 'harpsichord|piano|stein|clav|cembalo') }; foreach($f in $pick){ $bytes=[long]$f.size; if($bytes -le 80000000){ Write-Output ('FILE='+$f.name+' BYTES='+$bytes+' URL=https://archive.org/download/gabedudleyssf2collection/'+[uri]::EscapeDataString($f.name)) } }"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "pick-piano-harpsi",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\pick-piano-harpsi.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "find-harpsichord-sf2",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\find-harpsichord-sf2.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-keyboard-targets",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\verify-keyboard-targets.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-jv-gm-retry",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"$dest=Join-Path $env:TEMP 'maschine-keyboard-targets'; New-Item -ItemType Directory -Force -Path $dest | Out-Null; $url='https://archive.org/download/gabedudleyssf2collection/Roland%20JV-1080%20GM.sf2'; $out=Join-Path $dest 'Roland_JV-1080_GM.sf2'; for($i=1;$i -le 3;$i++){ try { Invoke-WebRequest -Uri $url -OutFile $out -TimeoutSec 300; Write-Output ('OK try='+$i+' bytes='+(Get-Item $out).Length); break } catch { Write-Output ('FAIL try='+$i+' :: '+$_.Exception.Message) } }"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-jv-gm-script",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\verify-jv-gm.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-stein-piano",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\Maschine.Demo\\verify-stein-piano.ps1"
+			],
+			"isBackground": false
+		}
+	]
+}

@@ -19,6 +19,8 @@ internal sealed class DemoController : IAsyncDisposable
 {
 	private static readonly byte[] s_buttonBrightnessCycle = [0, 64, 127, 255];
 	private const int TouchStripEncoderIndex = 8;
+	private const byte ActiveModeButtonBrightness = 127;
+	private const byte InactiveModeButtonBrightness = 0;
 
 	// ── Per-pad colour palette: one entry per pad, maps to all 16 device palette slots ────────
 
@@ -74,11 +76,13 @@ internal sealed class DemoController : IAsyncDisposable
 	// ── Zebra speed table: delay in ms for |velocity| = 1..5 ────────────────
 
 	private static readonly int[] s_zebraSpeedMs = [600, 200, 100, 50, 25];
+	private static readonly TimeSpan s_padRetriggerDebounce = TimeSpan.FromMilliseconds(70);
 
 	// ── Per-element state ───────────────────────────────────────────────────
 
 	private readonly byte[] _buttonBrightness;
 	private readonly bool[] _padDown;
+	private readonly DateTime[] _lastPadDownUtc;
 	private readonly DateTime[] _lastEncoderLogUtc;
 	private readonly SemaphoreSlim _touchStripUpdateGate = new(1, 1);
 	private readonly object _animationSync = new();
@@ -89,6 +93,7 @@ internal sealed class DemoController : IAsyncDisposable
 	private int _selectedDashboardIndex;
 	private int _touchStripLevel;
 	private int _touchStripRenderedLevel = -1;
+	private DrumSoundfontPlayer.InstrumentMode _activeInstrumentMode = DrumSoundfontPlayer.InstrumentMode.PadMode;
 
 	private readonly IMaschineClient _client;
 	private readonly ILogger<DemoController> _logger;
@@ -108,6 +113,7 @@ internal sealed class DemoController : IAsyncDisposable
 
 		_buttonBrightness = new byte[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_padDown = new bool[MaschineDeviceConstants.MikroMk3PadCount];
+		_lastPadDownUtc = new DateTime[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastEncoderLogUtc = new DateTime[MaschineDeviceConstants.MikroMk3EncoderCount];
 		_dashboards = BuildDashboards();
 	}
@@ -309,6 +315,12 @@ internal sealed class DemoController : IAsyncDisposable
 			return;
 		}
 
+		if (TryGetInstrumentModeForButton(state.Index, out var requestedMode))
+		{
+			_ = HandleInstrumentModeButtonAsync(requestedMode, buttonDescriptor);
+			return;
+		}
+
 		byte nextBrightness;
 		lock (_animationSync)
 		{
@@ -321,6 +333,79 @@ internal sealed class DemoController : IAsyncDisposable
 
 		_logger.LogInformation("Button action: {ButtonDescriptor} -> brightness {Brightness}", buttonDescriptor, nextBrightness);
 		_ = TrySetButtonLedAsync(state.Index, nextBrightness);
+
+	}
+
+	private async Task HandleInstrumentModeButtonAsync(DrumSoundfontPlayer.InstrumentMode requestedMode, string buttonDescriptor)
+	{
+		var cycleVariant = requestedMode == _activeInstrumentMode;
+		if (_drumPlayer is null)
+		{
+			_logger.LogWarning("Instrument mode change ignored: drum player unavailable.");
+			return;
+		}
+
+		if (_drumPlayer.TryActivateMode(requestedMode, cycleVariant, out var instrumentName, out var variantIndex, out var variantCount))
+		{
+			_activeInstrumentMode = requestedMode;
+			_logger.LogInformation(
+				"Instrument mode action: {ButtonDescriptor} -> mode={Mode}, variant={Variant}/{VariantCount}, instrument={Instrument}",
+				buttonDescriptor,
+				requestedMode,
+				variantIndex + 1,
+				variantCount,
+				instrumentName);
+		}
+		else
+		{
+			_logger.LogWarning("Instrument mode switch failed: mode={Mode}, details={Details}", requestedMode, instrumentName);
+		}
+
+		await UpdateInstrumentModeButtonLedsAsync().ConfigureAwait(false);
+	}
+
+	private static bool TryGetInstrumentModeForButton(int buttonIndex, out DrumSoundfontPlayer.InstrumentMode mode)
+	{
+		mode = DrumSoundfontPlayer.InstrumentMode.PadMode;
+		if (buttonIndex == (int)MikroMk3Button.PadMode)
+		{
+			mode = DrumSoundfontPlayer.InstrumentMode.PadMode;
+			return true;
+		}
+
+		if (buttonIndex == (int)MikroMk3Button.Keyboard)
+		{
+			mode = DrumSoundfontPlayer.InstrumentMode.Keyboard;
+			return true;
+		}
+
+		if (buttonIndex == (int)MikroMk3Button.Chords)
+		{
+			mode = DrumSoundfontPlayer.InstrumentMode.Chords;
+			return true;
+		}
+
+		return false;
+	}
+
+	private async Task UpdateInstrumentModeButtonLedsAsync()
+	{
+		if (_buttons is null)
+		{
+			return;
+		}
+
+		var padModeBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.PadMode ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
+		var keyboardBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.Keyboard ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
+		var chordsBrightness = _activeInstrumentMode == DrumSoundfontPlayer.InstrumentMode.Chords ? ActiveModeButtonBrightness : InactiveModeButtonBrightness;
+
+		_buttonBrightness[(int)MikroMk3Button.PadMode] = padModeBrightness;
+		_buttonBrightness[(int)MikroMk3Button.Keyboard] = keyboardBrightness;
+		_buttonBrightness[(int)MikroMk3Button.Chords] = chordsBrightness;
+
+		await TrySetButtonLedAsync((int)MikroMk3Button.PadMode, padModeBrightness).ConfigureAwait(false);
+		await TrySetButtonLedAsync((int)MikroMk3Button.Keyboard, keyboardBrightness).ConfigureAwait(false);
+		await TrySetButtonLedAsync((int)MikroMk3Button.Chords, chordsBrightness).ConfigureAwait(false);
 	}
 
 	private void OnButtonPressed(object? sender, Maschine.Api.Models.ButtonState state)
@@ -337,6 +422,7 @@ internal sealed class DemoController : IAsyncDisposable
 		var restoreColor = GetPadBaseColor(state.Index);
 		var wasDown = false;
 		var isDown = false;
+		var ignoreRetrigger = false;
 
 		lock (_animationSync)
 		{
@@ -350,11 +436,26 @@ internal sealed class DemoController : IAsyncDisposable
 			{
 				isDown = state.Pressure >= PressThreshold;
 				_padDown[state.Index] = isDown;
+				if (isDown)
+				{
+					var nowUtc = DateTime.UtcNow;
+					ignoreRetrigger = (nowUtc - _lastPadDownUtc[state.Index]) <= s_padRetriggerDebounce;
+					if (!ignoreRetrigger)
+					{
+						_lastPadDownUtc[state.Index] = nowUtc;
+					}
+				}
 			}
 		}
 
 		if (!wasDown && isDown)
 		{
+			if (ignoreRetrigger)
+			{
+				_logger.LogDebug("Pad DOWN ignored by debounce: P{PadNumber,2} (raw {PadRaw,2}), pressure={Pressure}", ToUserPadNumber(state.Index), state.Index, state.Pressure);
+				return;
+			}
+
 			_logger.LogInformation("Pad DOWN: P{PadNumber,2} (raw {PadRaw,2}), pressure={Pressure} -> white", ToUserPadNumber(state.Index), state.Index, state.Pressure);
 			_drumPlayer?.PlayPad(MapPadIndexWithVerticalFlip(state.Index), state.Pressure);
 			_ = TrySetPadColorAsync(state.Index, PadColor.White);
@@ -501,6 +602,13 @@ internal sealed class DemoController : IAsyncDisposable
 			_touchStripLevel = 13;
 			_touchStripRenderedLevel = -1;
 			Array.Fill(_buttonBrightness, (byte)0);
+			if (_drumPlayer is not null)
+			{
+				_ = _drumPlayer.TryActivateMode(_activeInstrumentMode, cycleVariant: false, out var instrumentName, out var variantIndex, out var variantCount);
+				_logger.LogInformation("Initial instrument mode: {Mode}, variant={Variant}/{VariantCount}, instrument={Instrument}", _activeInstrumentMode, variantIndex + 1, variantCount, instrumentName);
+			}
+
+			await UpdateInstrumentModeButtonLedsAsync().ConfigureAwait(false);
 			_drumPlayer?.SetVolumeFromStripLevel(_touchStripLevel);
 			await UpdateTouchStripLedsCoalescedAsync().ConfigureAwait(false);
 		}
@@ -1002,7 +1110,8 @@ internal sealed class DemoController : IAsyncDisposable
 	{
 		_logger.LogInformation("=== Maschine Mikro MK3 Reactive Demo ===");
 		_logger.LogInformation("Behavior:");
-		_logger.LogInformation("  Button press  -> cycles brightness: off -> mid -> full");
+		_logger.LogInformation("  PAD MODE / KEYBOARD / CHORDS -> radio buttons (one lit), press active mode again to cycle 3 sounds");
+		_logger.LogInformation("  Other buttons -> cycles brightness: off -> mid -> full");
 		_logger.LogInformation("  Pad press     -> flash white and trigger a velocity-aware drum hit");
 		_logger.LogInformation("  Knob          -> selects the active Dashboard by absolute position");
 		_logger.LogInformation("  Logo button   -> toggles Dashboard invert mode");
