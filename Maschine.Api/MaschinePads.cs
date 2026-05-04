@@ -10,14 +10,16 @@ namespace Maschine.Api;
 internal sealed class MaschinePads : IPads
 {
 	private readonly IHidDevice _device;
+	private readonly MikroMk3UnifiedLights _unifiedLights;
 	private readonly PadState[] _states;
 
 	/// <inheritdoc/>
 	public event EventHandler<PadState>? PadChanged;
 
-	internal MaschinePads(IHidDevice device)
+	internal MaschinePads(IHidDevice device, MikroMk3UnifiedLights unifiedLights)
 	{
 		_device = device;
+		_unifiedLights = unifiedLights;
 		_states = new PadState[MaschineDeviceConstants.MikroMk3PadCount];
 		for (var i = 0; i < _states.Length; i++)
 		{
@@ -43,6 +45,11 @@ internal sealed class MaschinePads : IPads
 	/// <inheritdoc/>
 	public Task SetColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken = default)
 	{
+		if (_unifiedLights.IsEnabled)
+		{
+			return _unifiedLights.SetPadColorAsync(padIndex, color, cancellationToken);
+		}
+
 		var report = MikroMk3Protocol.BuildSinglePadColorReport(padIndex, color);
 		return _device.WriteAsync(report, cancellationToken);
 	}
@@ -50,6 +57,11 @@ internal sealed class MaschinePads : IPads
 	/// <inheritdoc/>
 	public Task SetAllColorsAsync(PadColor color, CancellationToken cancellationToken = default)
 	{
+		if (_unifiedLights.IsEnabled)
+		{
+			return _unifiedLights.SetAllPadColorsAsync(color, cancellationToken);
+		}
+
 		var report = MikroMk3Protocol.BuildAllPadsColorReport(color);
 		return _device.WriteAsync(report, cancellationToken);
 	}
@@ -60,14 +72,12 @@ internal sealed class MaschinePads : IPads
 	/// </summary>
 	internal void ApplyReport(byte[] report)
 	{
-		var newStates = MikroMk3Protocol.ParsePadPressureReport(report);
-		for (var i = 0; i < newStates.Count; i++)
+		var newState = MikroMk3Protocol.ParsePadPressureReport(report);
+		var i = newState.Index;
+		if (i >= 0 && i < _states.Length && _states[i].Pressure != newState.Pressure)
 		{
-			if (_states[i].Pressure != newStates[i].Pressure)
-			{
-				_states[i] = newStates[i];
-				PadChanged?.Invoke(this, _states[i]);
-			}
+			_states[i] = newState;
+			PadChanged?.Invoke(this, _states[i]);
 		}
 	}
 }

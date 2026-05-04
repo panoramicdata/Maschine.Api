@@ -18,6 +18,12 @@ internal sealed class FakeHidDevice : IHidDevice
 	/// <summary>Whether the device has been disposed.</summary>
 	public bool IsDisposed { get; private set; }
 
+	/// <inheritdoc/>
+	public int MaxOutputReportLength => 256;
+
+	/// <inheritdoc/>
+	public int MaxFeatureReportLength => 256;
+
 	/// <summary>Queues a report to be returned by the next <see cref="ReadAsync"/> call.</summary>
 	public void EnqueueReport(byte[] report)
 	{
@@ -57,6 +63,14 @@ internal sealed class FakeHidDevice : IHidDevice
 
 	/// <inheritdoc/>
 	public Task WriteAsync(byte[] data, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		WrittenReports.Add(data);
+		return Task.CompletedTask;
+	}
+
+	/// <inheritdoc/>
+	public Task WriteFeatureAsync(byte[] data, CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		WrittenReports.Add(data);
@@ -221,18 +235,18 @@ public sealed class MaschineClientTests
 		PadState? received = null;
 		client.Pads.PadChanged += (_, state) => received = state;
 
-		// Build a report where pad 0 has pressure 0x100
+		// Build a report where pad 5 has active pressure (raw > 0x40)
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
-		report[1] = 0x00;
-		report[2] = 0x01; // pad 0 pressure = 0x100 (high nibble)
+		report[1] = 0x05; // pad index 5
+		report[2] = 0x50; // active pressure: 0x50 - 0x40 = 0x10 -> pressure = 4096
 		device.EnqueueReport(report);
 
 		// Allow the read loop to process the queued report
 		await Task.Delay(100);
 
 		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(0);
+		received!.Value.Index.Should().Be(5);
 		received.Value.IsPressed.Should().BeTrue();
 
 		await client.DisconnectAsync();
@@ -240,14 +254,17 @@ public sealed class MaschineClientTests
 	}
 
 	[Fact]
-	public async Task ButtonChanged_EventFired_WhenButtonReportReceived()
+	public async Task KeyEvent_KeyDown_Fired_WhenButtonReportReceived()
 	{
 		var device = new FakeHidDevice();
-		var client = CreateClient(device);
+		// Empty KeyModes keeps all buttons at EventsOnly — no LED management, no LED-capability validation
+		var options = new MaschineClientOptions { KeyModes = [] };
+		var factory = new FakeHidDeviceFactory(device);
+		var client = new MaschineClient(options, factory, NullLogger<MaschineClient>.Instance);
 		await client.ConnectAsync();
 
-		ButtonState? received = null;
-		client.Buttons.ButtonChanged += (_, state) => received = state;
+		KeyEvent? received = null;
+		client.Buttons.KeyEvent += (_, e) => { if (!received.HasValue) received = e; };
 
 		var report = new byte[MikroMk3Protocol.ButtonReportLength];
 		report[0] = MikroMk3Protocol.ButtonReportId;
@@ -257,15 +274,14 @@ public sealed class MaschineClientTests
 		await Task.Delay(100);
 
 		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(0);
-		received.Value.IsPressed.Should().BeTrue();
+		received!.Value.Type.Should().Be(KeyEventType.KeyDown);
 
 		await client.DisconnectAsync();
 		client.Dispose();
 	}
 
 	[Fact]
-	public async Task EncoderChanged_EventFired_WhenEncoderReportReceived()
+	public async Task EncoderChanged_EventFired_WhenTouchStripButtonReportReceived()
 	{
 		var device = new FakeHidDevice();
 		var client = CreateClient(device);
@@ -274,16 +290,24 @@ public sealed class MaschineClientTests
 		EncoderDelta? received = null;
 		client.Encoders.EncoderChanged += (_, delta) => received = delta;
 
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[1] = 2; // encoder 0 CW by 2
-		device.EnqueueReport(report);
+		// First report sets the baseline absolute value
+		var report1 = new byte[MikroMk3Protocol.ButtonReportLength];
+		report1[0] = MikroMk3Protocol.ButtonReportId;
+		report1[10] = 0x40;
+		device.EnqueueReport(report1);
+
+		await Task.Delay(50);
+
+		// Second report changes byte[10] by +1
+		var report2 = new byte[MikroMk3Protocol.ButtonReportLength];
+		report2[0] = MikroMk3Protocol.ButtonReportId;
+		report2[10] = 0x41;
+		device.EnqueueReport(report2);
 
 		await Task.Delay(100);
 
 		received.Should().NotBeNull();
-		received!.Value.Index.Should().Be(0);
-		received.Value.Delta.Should().Be(2);
+		received!.Value.Delta.Should().Be(1);
 
 		await client.DisconnectAsync();
 		client.Dispose();

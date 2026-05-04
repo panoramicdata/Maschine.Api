@@ -366,7 +366,9 @@ internal sealed class MaschineButtons : IButtons
 			if (group.Mode == RadioButtonGroupMode.AlwaysOneOn)
 			{
 				group.SelectedIndex = group.Keys[0];
-				_keyOnStates[group.SelectedIndex.Value] = true;
+				var idx = group.SelectedIndex.Value;
+				_keyOnStates[idx] = true;
+				_ = SetLedInternalAsync(idx, ManagedOnBrightness, CancellationToken.None);
 			}
 		}
 	}

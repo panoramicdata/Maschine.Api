@@ -8,22 +8,16 @@ public sealed class MikroMk3ProtocolTests
 	public void PadLedReportId_Is0x80() => MikroMk3Protocol.PadLedReportId.Should().Be(0x80);
 
 	[Fact]
-	public void PadPressureReportId_Is0x20() => MikroMk3Protocol.PadPressureReportId.Should().Be(0x20);
+	public void PadPressureReportId_Is0x02() => MikroMk3Protocol.PadPressureReportId.Should().Be(0x02);
 
 	[Fact]
 	public void ButtonReportId_Is0x01() => MikroMk3Protocol.ButtonReportId.Should().Be(0x01);
 
 	[Fact]
-	public void EncoderReportId_Is0x02() => MikroMk3Protocol.EncoderReportId.Should().Be(0x02);
+	public void PadPressureReportLength_Is64() => MikroMk3Protocol.PadPressureReportLength.Should().Be(64);
 
 	[Fact]
-	public void PadPressureReportLength_Is33() => MikroMk3Protocol.PadPressureReportLength.Should().Be(33);
-
-	[Fact]
-	public void ButtonReportLength_Is6() => MikroMk3Protocol.ButtonReportLength.Should().Be(6);
-
-	[Fact]
-	public void EncoderReportLength_Is10() => MikroMk3Protocol.EncoderReportLength.Should().Be(10);
+	public void ButtonReportLength_Is14() => MikroMk3Protocol.ButtonReportLength.Should().Be(14);
 
 	[Fact]
 	public void PadLedReportLength_Is49() => MikroMk3Protocol.PadLedReportLength.Should().Be(49);
@@ -31,48 +25,51 @@ public sealed class MikroMk3ProtocolTests
 	// ── ParsePadPressureReport ───────────────────────────────────────────────
 
 	[Fact]
-	public void ParsePadPressureReport_AllZeroPressure_ReturnsUnpressedPads()
+	public void ParsePadPressureReport_IdlePressure_ReturnsNotPressed()
 	{
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
+		report[1] = 0;    // pad index 0
+		report[2] = 0x40; // idle/rest pressure
 
-		var states = MikroMk3Protocol.ParsePadPressureReport(report);
+		var state = MikroMk3Protocol.ParsePadPressureReport(report);
 
-		states.Should().HaveCount(MaschineDeviceConstants.MikroMk3PadCount);
-		states.Should().AllSatisfy(s => s.IsPressed.Should().BeFalse());
+		state.IsPressed.Should().BeFalse();
+		state.Index.Should().Be(0);
 	}
 
 	[Fact]
-	public void ParsePadPressureReport_Pad0FullPressure_IsPressed()
+	public void ParsePadPressureReport_ActivePressure_IsPressed()
 	{
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
-		report[1] = 0xFF; // low byte of pad 0
-		report[2] = 0x0F; // high nibble — 12-bit max = 0x0FFF
+		report[1] = 5;    // pad index 5
+		report[2] = 0x50; // active: raw - 0x40 = 0x10 → pressure = 0x10 * 256 = 4096
 
-		var states = MikroMk3Protocol.ParsePadPressureReport(report);
+		var state = MikroMk3Protocol.ParsePadPressureReport(report);
 
-		states[0].IsPressed.Should().BeTrue();
-		states[0].Pressure.Should().Be(0x0FFF);
+		state.IsPressed.Should().BeTrue();
+		state.Index.Should().Be(5);
+		state.Pressure.Should().Be(0x10 * 256);
 	}
 
 	[Fact]
-	public void ParsePadPressureReport_Pad15_ReadsCorrectOffset()
+	public void ParsePadPressureReport_Pad15_ReturnsCorrectIndex()
 	{
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
-		const int pad15Offset = 1 + (15 * 2);
-		report[pad15Offset] = 0x80;
+		report[1] = 15;   // pad index 15
+		report[2] = 0x50; // active pressure
 
-		var states = MikroMk3Protocol.ParsePadPressureReport(report);
+		var state = MikroMk3Protocol.ParsePadPressureReport(report);
 
-		states[15].Pressure.Should().Be(0x80);
-		states[15].Index.Should().Be(15);
+		state.Index.Should().Be(15);
+		state.IsPressed.Should().BeTrue();
 	}
 
 	[Fact]
 	public void ParsePadPressureReport_NullReport_Throws()
-		=> ((Func<IReadOnlyList<PadState>>)(() => MikroMk3Protocol.ParsePadPressureReport(null!)))
+		=> ((Func<PadState>)(() => MikroMk3Protocol.ParsePadPressureReport(null!)))
 			.Should().Throw<ArgumentNullException>();
 
 	[Fact]
@@ -80,7 +77,7 @@ public sealed class MikroMk3ProtocolTests
 	{
 		var report = new byte[10];
 		report[0] = MikroMk3Protocol.PadPressureReportId;
-		((Func<IReadOnlyList<PadState>>)(() => MikroMk3Protocol.ParsePadPressureReport(report)))
+		((Func<PadState>)(() => MikroMk3Protocol.ParsePadPressureReport(report)))
 			.Should().Throw<ArgumentException>().WithMessage("*too short*");
 	}
 
@@ -89,7 +86,7 @@ public sealed class MikroMk3ProtocolTests
 	{
 		var report = new byte[MikroMk3Protocol.PadPressureReportLength];
 		report[0] = 0xFF;
-		((Func<IReadOnlyList<PadState>>)(() => MikroMk3Protocol.ParsePadPressureReport(report)))
+		((Func<PadState>)(() => MikroMk3Protocol.ParsePadPressureReport(report)))
 			.Should().Throw<ArgumentException>().WithMessage("*report ID*");
 	}
 
@@ -177,85 +174,6 @@ public sealed class MikroMk3ProtocolTests
 		var report = new byte[MikroMk3Protocol.ButtonReportLength];
 		report[0] = 0xFF;
 		((Func<IReadOnlyList<ButtonState>>)(() => MikroMk3Protocol.ParseButtonReport(report)))
-			.Should().Throw<ArgumentException>().WithMessage("*report ID*");
-	}
-
-	// ── ParseEncoderReport ───────────────────────────────────────────────────
-
-	[Fact]
-	public void ParseEncoderReport_AllZero_ReturnsEmptyList()
-	{
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-
-		var deltas = MikroMk3Protocol.ParseEncoderReport(report);
-
-		deltas.Should().BeEmpty();
-	}
-
-	[Fact]
-	public void ParseEncoderReport_Encoder0CW_ReturnsSinglePositiveDelta()
-	{
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[1] = 1; // encoder 0, CW by 1
-
-		var deltas = MikroMk3Protocol.ParseEncoderReport(report);
-
-		deltas.Should().HaveCount(1);
-		deltas[0].Index.Should().Be(0);
-		deltas[0].Delta.Should().Be(1);
-	}
-
-	[Fact]
-	public void ParseEncoderReport_Encoder8CCW_ReturnsSingleNegativeDelta()
-	{
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[9] = unchecked((byte)-1); // encoder 8, CCW by 1
-
-		var deltas = MikroMk3Protocol.ParseEncoderReport(report);
-
-		deltas.Should().HaveCount(1);
-		deltas[0].Index.Should().Be(8);
-		deltas[0].Delta.Should().Be(-1);
-	}
-
-	[Fact]
-	public void ParseEncoderReport_MultipleEncodersMoved_ReturnsAllDeltas()
-	{
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		report[1] = 3;  // encoder 0 +3
-		report[5] = unchecked((byte)-2); // encoder 4 -2
-
-		var deltas = MikroMk3Protocol.ParseEncoderReport(report);
-
-		deltas.Should().HaveCount(2);
-		deltas.Should().Contain(d => d.Index == 0 && d.Delta == 3);
-		deltas.Should().Contain(d => d.Index == 4 && d.Delta == -2);
-	}
-
-	[Fact]
-	public void ParseEncoderReport_NullReport_Throws()
-		=> ((Func<IReadOnlyList<EncoderDelta>>)(() => MikroMk3Protocol.ParseEncoderReport(null!)))
-			.Should().Throw<ArgumentNullException>();
-
-	[Fact]
-	public void ParseEncoderReport_TooShort_Throws()
-	{
-		var report = new byte[3];
-		report[0] = MikroMk3Protocol.EncoderReportId;
-		((Func<IReadOnlyList<EncoderDelta>>)(() => MikroMk3Protocol.ParseEncoderReport(report)))
-			.Should().Throw<ArgumentException>().WithMessage("*too short*");
-	}
-
-	[Fact]
-	public void ParseEncoderReport_WrongReportId_Throws()
-	{
-		var report = new byte[MikroMk3Protocol.EncoderReportLength];
-		report[0] = 0xFF;
-		((Func<IReadOnlyList<EncoderDelta>>)(() => MikroMk3Protocol.ParseEncoderReport(report)))
 			.Should().Throw<ArgumentException>().WithMessage("*report ID*");
 	}
 
