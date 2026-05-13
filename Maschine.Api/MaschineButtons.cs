@@ -27,6 +27,7 @@ internal sealed class MaschineButtons : IButtons
 	private readonly int[] _flashGenerationByButton;
 	private readonly bool[] _latchLongReleaseArmed;
 	private readonly bool[] _latchShortReleaseArmed;
+	private readonly bool _allowExternalLedOverrides;
 	private bool _buttonLedUnsupported;
 	private EncoderTouchState _lastEncoderTouch;
 
@@ -42,6 +43,7 @@ internal sealed class MaschineButtons : IButtons
 		_unifiedLights = unifiedLights;
 		_brightness = brightness;
 		_globalFireFlashDurationMs = Math.Max(0, options.KeyFireFlashDurationMs);
+		_allowExternalLedOverrides = options.AllowExternalLedOverrides;
 		_states = new ButtonState[MaschineDeviceConstants.MikroMk3ButtonCount];
 		_keyModes = new KeyMode[PhysicalButtonCount];
 		_keyOnStates = new bool[PhysicalButtonCount];
@@ -99,6 +101,7 @@ internal sealed class MaschineButtons : IButtons
 	public Task SetLedAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken = default)
 	{
 		ThrowIfLibraryManaged(buttonIndex);
+		SyncManagedKeyState(buttonIndex, brightness);
 		return SetLedInternalAsync(buttonIndex, brightness, cancellationToken);
 	}
 
@@ -112,11 +115,12 @@ internal sealed class MaschineButtons : IButtons
 	/// <inheritdoc/>
 	public Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken = default)
 	{
-		if (HasAnyLibraryManagedKeys())
+		if (!_allowExternalLedOverrides && HasAnyLibraryManagedKeys())
 		{
 			throw new InvalidOperationException("One or more keys are in a managed key mode; individual/all-button LED writes are disabled for managed keys.");
 		}
 
+		SyncAllManagedKeyStates(brightness);
 		return SetAllLedsInternalAsync(brightness, cancellationToken);
 	}
 
@@ -148,6 +152,8 @@ internal sealed class MaschineButtons : IButtons
 
 	private void ThrowIfLibraryManaged(int buttonIndex)
 	{
+		if (_allowExternalLedOverrides) return;
+
 		if (buttonIndex < 0 || buttonIndex >= PhysicalButtonCount)
 		{
 			return;
@@ -161,6 +167,27 @@ internal sealed class MaschineButtons : IButtons
 		if (_keyModes[buttonIndex] != KeyMode.EventsOnly)
 		{
 			throw new InvalidOperationException($"LED for key '{button}' is managed by the library while mode '{_keyModes[buttonIndex]}' is active.");
+		}
+	}
+
+	private void SyncManagedKeyState(int buttonIndex, byte brightness)
+	{
+		if (!_allowExternalLedOverrides) return;
+		if (buttonIndex < 0 || buttonIndex >= PhysicalButtonCount) return;
+		if (!MikroMk3ButtonExtensions.TryFromIndex(buttonIndex, out _)) return;
+		if (_keyModes[buttonIndex] == KeyMode.EventsOnly) return;
+		_keyOnStates[buttonIndex] = brightness > 0;
+	}
+
+	private void SyncAllManagedKeyStates(byte brightness)
+	{
+		if (!_allowExternalLedOverrides) return;
+		for (var i = 0; i < DirectLedButtonCount; i++)
+		{
+			if (_keyModes[i] != KeyMode.EventsOnly)
+			{
+				_keyOnStates[i] = brightness > 0;
+			}
 		}
 	}
 

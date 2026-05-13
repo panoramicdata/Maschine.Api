@@ -57,4 +57,12 @@ public sealed class MaschineClientOptions
 	/// Set an entry to null to use <see cref="KeyFireFlashDurationMs"/>.
 	/// </summary>
 	public Dictionary<MikroMk3Button, int?> KeyFireFlashDurationOverridesMs { get; set; } = [];
+
+	/// <summary>
+	/// When true, external LED writes are permitted even while keys are in a managed
+	/// mode (e.g. <see cref="KeyMode.LatchEarly"/>). The write is applied to the
+	/// hardware and the managed on/off state is updated to remain consistent, so
+	/// subsequent latch transitions continue to behave correctly.
+	/// </summary>
+	public bool AllowExternalLedOverrides { get; set; }
 }
