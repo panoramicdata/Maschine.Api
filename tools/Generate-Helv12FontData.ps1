@@ -12,7 +12,7 @@ if (-not (Test-Path $regular) -or -not (Test-Path $bold)) {
     throw "Expected BDF files not found in $repo."
 }
 
-function Get-GlyphRows {
+function Get-GlyphRowTable {
     param([string]$Path)
 
     $lines = Get-Content $Path
@@ -167,8 +167,8 @@ function Format-GlyphArray {
     return $sb.ToString()
 }
 
-$regularGlyphs = Get-GlyphRows -Path $regular
-$boldGlyphs = Get-GlyphRows -Path $bold
+$regularGlyphs = Get-GlyphRowTable -Path $regular
+$boldGlyphs = Get-GlyphRowTable -Path $bold
 
 $out = Join-Path $env:TEMP 'helv12-arrays.txt'
 @(
