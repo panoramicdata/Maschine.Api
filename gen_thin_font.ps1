@@ -1,4 +1,8 @@
-function Thin-Byte([byte]$b) {
+# Status goes to the information stream rather than Write-Host, so a caller can capture,
+# redirect or silence it.
+$InformationPreference = 'Continue'
+
+function ConvertTo-ThinByte([byte]$b) {
     $result = $b; $bit = 0
     while ($bit -lt 8) {
         $cur = ($b -shr $bit) -band 1
@@ -124,9 +128,9 @@ for ($ch = 0; $ch -lt 95; $ch++) {
     $name = $charNames[$ch]
     $null = $sb.AppendLine("        // $hex ($name)")
     $t = [byte[]]::new(8)
-    for ($row = 0; $row -lt 8; $row++) { $t[$row] = Thin-Byte $glyphs[$ch * 8 + $row] }
+    for ($row = 0; $row -lt 8; $row++) { $t[$row] = ConvertTo-ThinByte $glyphs[$ch * 8 + $row] }
     $line = "        0x{0:X2}, 0x{1:X2}, 0x{2:X2}, 0x{3:X2}, 0x{4:X2}, 0x{5:X2}, 0x{6:X2}, 0x{7:X2}," -f ([int]$t[0]),([int]$t[1]),([int]$t[2]),([int]$t[3]),([int]$t[4]),([int]$t[5]),([int]$t[6]),([int]$t[7])
     $null = $sb.AppendLine($line)
 }
 $sb.ToString() | Set-Content "$env:TEMP\font8x8thin.txt" -Encoding UTF8
-Write-Host "Done. Lines: $($sb.ToString().Split("`n").Count)"
+Write-Information "Done. Lines: $($sb.ToString().Split("`n").Count)"

@@ -1,3 +1,7 @@
+# Status goes to the information stream rather than Write-Host, so a caller can capture,
+# redirect or silence it.
+$InformationPreference = 'Continue'
+
 $ErrorActionPreference = 'Stop'
 
 $repo = Join-Path $env:TEMP 'adobe-75dpi'
@@ -130,7 +134,7 @@ function Get-GlyphRows {
     return ,$glyphs
 }
 
-function Emit-Array {
+function Format-GlyphArray {
     param(
         [hashtable]$Glyphs,
         [string]$Name
@@ -168,12 +172,12 @@ $boldGlyphs = Get-GlyphRows -Path $bold
 
 $out = Join-Path $env:TEMP 'helv12-arrays.txt'
 @(
-    (Emit-Array -Glyphs $regularGlyphs -Name 'Font12x12HelvRegularGlyphs')
+    (Format-GlyphArray -Glyphs $regularGlyphs -Name 'Font12x12HelvRegularGlyphs')
     ''
-    (Emit-Array -Glyphs $boldGlyphs -Name 'Font12x12HelvBoldGlyphs')
+    (Format-GlyphArray -Glyphs $boldGlyphs -Name 'Font12x12HelvBoldGlyphs')
 ) | Set-Content -Path $out -Encoding UTF8
 
-Write-Host "Generated: $out"
+Write-Information "Generated: $out"
 Get-Content $out -TotalCount 24
-Write-Host '...'
-(Get-Content $out | Measure-Object -Line).Lines | Write-Host
+Write-Information '...'
+Write-Information "Total lines: $((Get-Content $out | Measure-Object -Line).Lines)"

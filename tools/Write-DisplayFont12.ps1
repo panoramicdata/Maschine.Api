@@ -1,3 +1,7 @@
+# Status goes to the information stream rather than Write-Host, so a caller can capture,
+# redirect or silence it.
+$InformationPreference = 'Continue'
+
 $ErrorActionPreference = 'Stop'
 
 $arrays = Get-Content "$env:TEMP\helv12-arrays.txt" -Raw
@@ -40,5 +44,5 @@ $footer = @"
 "@
 
 Set-Content -Path $target -Value ($header + $arrays + $footer) -Encoding UTF8
-Write-Host "Wrote $target"
-(Get-Content $target | Measure-Object -Line).Lines | Write-Host
+Write-Information "Wrote $target"
+Write-Information "Total lines: $((Get-Content $target | Measure-Object -Line).Lines)"
