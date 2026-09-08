@@ -52,7 +52,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		_gate.Dispose();
 	}
 
-	internal async Task SetButtonBrightnessAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken)
+	internal Task SetButtonBrightnessAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken)
 	{
 		if (buttonIndex < 0 || buttonIndex >= MaschineDeviceConstants.MikroMk3ButtonCount)
 		{
@@ -63,59 +63,22 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		// Only the first 39 button slots are directly addressable in this packet.
 		if (buttonIndex >= FirstPadLightId)
 		{
-			return;
+			return Task.CompletedTask;
 		}
 
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var value = ScaleButtonBrightness(brightness);
-			if (_report[1 + buttonIndex] == value)
-			{
-				return;
-			}
-
-			_report[1 + buttonIndex] = value;
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		var value = ScaleButtonBrightness(brightness);
+		return WriteIfChangedAsync(report => SetSlot(report, buttonIndex, value), cancellationToken);
 	}
 
-	internal async Task SetAllButtonBrightnessAsync(byte brightness, CancellationToken cancellationToken)
+	internal Task SetAllButtonBrightnessAsync(byte brightness, CancellationToken cancellationToken)
 	{
 		var value = ScaleButtonBrightness(brightness);
-
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var changed = false;
-			for (var i = 0; i < FirstPadLightId; i++)
-			{
-				var offset = 1 + i;
-				if (_report[offset] != value)
-				{
-					_report[offset] = value;
-					changed = true;
-				}
-			}
-
-			if (!changed)
-			{
-				return;
-			}
-
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		return WriteIfChangedAsync(
+			report => SetSlots(report, FirstPadLightId, _ => value, static i => i),
+			cancellationToken);
 	}
 
-	internal async Task SetPadColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken)
+	internal Task SetPadColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken)
 	{
 		if (padIndex < 0 || padIndex >= MaschineDeviceConstants.MikroMk3PadCount)
 		{
@@ -123,58 +86,21 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 				$"Pad index must be 0-{MaschineDeviceConstants.MikroMk3PadCount - 1}.");
 		}
 
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var lightId = s_padIndexToLightId[padIndex];
-			var value = EncodePadColor(color);
-			var offset = 1 + lightId;
-			if (_report[offset] == value)
-			{
-				return;
-			}
-
-			_report[offset] = value;
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		var value = EncodePadColor(color);
+		return WriteIfChangedAsync(
+			report => SetSlot(report, s_padIndexToLightId[padIndex], value),
+			cancellationToken);
 	}
 
-	internal async Task SetAllPadColorsAsync(PadColor color, CancellationToken cancellationToken)
+	internal Task SetAllPadColorsAsync(PadColor color, CancellationToken cancellationToken)
 	{
 		var value = EncodePadColor(color);
-
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var changed = false;
-			for (var i = 0; i < s_padIndexToLightId.Length; i++)
-			{
-				var offset = 1 + s_padIndexToLightId[i];
-				if (_report[offset] != value)
-				{
-					_report[offset] = value;
-					changed = true;
-				}
-			}
-
-			if (!changed)
-			{
-				return;
-			}
-
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		return WriteIfChangedAsync(
+			report => SetSlots(report, s_padIndexToLightId.Length, _ => value, static i => s_padIndexToLightId[i]),
+			cancellationToken);
 	}
 
-	internal async Task SetStripLedAsync(int position, byte brightness, CancellationToken cancellationToken)
+	internal Task SetStripLedAsync(int position, byte brightness, CancellationToken cancellationToken)
 	{
 		if (position < 0 || position >= MaschineDeviceConstants.MikroMk3TouchStripLedCount)
 		{
@@ -183,57 +109,20 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		}
 
 		var value = ScaleButtonBrightness(brightness);
-
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var offset = 1 + FirstStripLightId + position;
-			if (_report[offset] == value)
-			{
-				return;
-			}
-
-			_report[offset] = value;
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		return WriteIfChangedAsync(
+			report => SetSlot(report, FirstStripLightId + position, value),
+			cancellationToken);
 	}
 
-	internal async Task SetAllStripLedsAsync(byte brightness, CancellationToken cancellationToken)
+	internal Task SetAllStripLedsAsync(byte brightness, CancellationToken cancellationToken)
 	{
 		var value = ScaleButtonBrightness(brightness);
-
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var changed = false;
-			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
-			{
-				var offset = 1 + FirstStripLightId + i;
-				if (_report[offset] != value)
-				{
-					_report[offset] = value;
-					changed = true;
-				}
-			}
-
-			if (!changed)
-			{
-				return;
-			}
-
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
-		{
-			_gate.Release();
-		}
+		return WriteIfChangedAsync(
+			report => SetSlots(report, MaschineDeviceConstants.MikroMk3TouchStripLedCount, _ => value, StripSlot),
+			cancellationToken);
 	}
 
-	internal async Task SetStripLedsAsync(IReadOnlyList<byte> brightnessValues, CancellationToken cancellationToken)
+	internal Task SetStripLedsAsync(IReadOnlyList<byte> brightnessValues, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(brightnessValues);
 		if (brightnessValues.Count != MaschineDeviceConstants.MikroMk3TouchStripLedCount)
@@ -243,22 +132,40 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 				nameof(brightnessValues));
 		}
 
+		return WriteIfChangedAsync(
+			report => SetSlots(report, brightnessValues.Count, i => ScaleButtonBrightness(brightnessValues[i]), StripSlot),
+			cancellationToken);
+	}
+
+	internal Task SetStripLedsColorAsync(IReadOnlyList<PadColor> colors, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(colors);
+		if (colors.Count != MaschineDeviceConstants.MikroMk3TouchStripLedCount)
+		{
+			throw new ArgumentException(
+				$"Expected {MaschineDeviceConstants.MikroMk3TouchStripLedCount} color values, got {colors.Count}.",
+				nameof(colors));
+		}
+
+		return WriteIfChangedAsync(
+			report => SetSlots(report, colors.Count, i => EncodePadColor(colors[i]), StripSlot),
+			cancellationToken);
+	}
+
+	private static int StripSlot(int index) => FirstStripLightId + index;
+
+	/// <summary>
+	/// Applies <paramref name="mutate"/> to the light packet under the write gate and sends the
+	/// packet only if it actually changed, so repeated writes of the same state stay off the wire.
+	/// </summary>
+	/// <param name="mutate">Returns whether it changed any byte of the packet.</param>
+	/// <param name="cancellationToken">Cancels waiting for the gate and the device write.</param>
+	private async Task WriteIfChangedAsync(Func<byte[], bool> mutate, CancellationToken cancellationToken)
+	{
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			var changed = false;
-			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
-			{
-				var value = ScaleButtonBrightness(brightnessValues[i]);
-				var offset = 1 + FirstStripLightId + i;
-				if (_report[offset] != value)
-				{
-					_report[offset] = value;
-					changed = true;
-				}
-			}
-
-			if (!changed)
+			if (!mutate(_report))
 			{
 				return;
 			}
@@ -271,42 +178,35 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		}
 	}
 
-	internal async Task SetStripLedsColorAsync(IReadOnlyList<PadColor> colors, CancellationToken cancellationToken)
+	/// <summary>Writes one light slot, reporting whether it changed.</summary>
+	private static bool SetSlot(byte[] report, int lightId, byte value)
 	{
-		ArgumentNullException.ThrowIfNull(colors);
-		if (colors.Count != MaschineDeviceConstants.MikroMk3TouchStripLedCount)
+		var offset = 1 + lightId;
+		if (report[offset] == value)
 		{
-			throw new ArgumentException(
-				$"Expected {MaschineDeviceConstants.MikroMk3TouchStripLedCount} color values, got {colors.Count}.",
-				nameof(colors));
+			return false;
 		}
 
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try
-		{
-			var changed = false;
-			for (var i = 0; i < MaschineDeviceConstants.MikroMk3TouchStripLedCount; i++)
-			{
-				var value = EncodePadColor(colors[i]);
-				var offset = 1 + FirstStripLightId + i;
-				if (_report[offset] != value)
-				{
-					_report[offset] = value;
-					changed = true;
-				}
-			}
+		report[offset] = value;
+		return true;
+	}
 
-			if (!changed)
-			{
-				return;
-			}
-
-			await _device.WriteAsync(_report, cancellationToken).ConfigureAwait(false);
-		}
-		finally
+	/// <summary>
+	/// Writes <paramref name="count"/> light slots, reporting whether any of them changed.
+	/// </summary>
+	/// <param name="report">The light packet.</param>
+	/// <param name="count">Number of logical positions to write.</param>
+	/// <param name="valueAt">Value for the logical position.</param>
+	/// <param name="lightIdAt">Hardware light ID for the logical position.</param>
+	private static bool SetSlots(byte[] report, int count, Func<int, byte> valueAt, Func<int, int> lightIdAt)
+	{
+		var changed = false;
+		for (var i = 0; i < count; i++)
 		{
-			_gate.Release();
+			changed |= SetSlot(report, lightIdAt(i), valueAt(i));
 		}
+
+		return changed;
 	}
 
 	private static byte ScaleButtonBrightness(byte brightness)
@@ -322,70 +222,76 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 	}
 
 
-private static byte EncodePadColor(PadColor color)
-{
-var r = color.R;
-var g = color.G;
-var b = color.B;
+	private static byte EncodePadColor(PadColor color)
+	{
+		var r = color.R;
+		var g = color.G;
+		var b = color.B;
 
-if (r == 0 && g == 0 && b == 0)
-{
-return 0;
-}
+		if (r == 0 && g == 0 && b == 0)
+		{
+			return 0;
+		}
 
-var max = Math.Max(r, Math.Max(g, b));
-byte intensity = max >= 171 ? (byte)2 : max >= 86 ? (byte)1 : (byte)0;
+		var max = Math.Max(r, Math.Max(g, b));
+		byte intensity = max >= 171 ? (byte)2 : max >= 86 ? (byte)1 : (byte)0;
 
-// Near-grayscale (low saturation) -> white (palette index 17).
-var min = Math.Min(r, Math.Min(g, b));
-var delta = max - min;
-if (delta < max / 4)
-{
-return (byte)((17 << 2) | intensity);
-}
+		// Near-grayscale (low saturation) -> white (palette index 17).
+		var min = Math.Min(r, Math.Min(g, b));
+		var delta = max - min;
+		if (delta < max / 4)
+		{
+			return (byte)((17 << 2) | intensity);
+		}
 
-// Compute hue in degrees 0-360.
-double h;
-if (max == r)
-{
-h = 60.0 * ((double)(g - b) / delta % 6);
-}
-else if (max == g)
-{
-h = 60.0 * ((double)(b - r) / delta + 2);
-}
-else
-{
-h = 60.0 * ((double)(r - g) / delta + 4);
-}
+		return (byte)((HueToPaletteIndex(ComputeHueDegrees(r, g, b, max, delta)) << 2) | intensity);
+	}
 
-if (h < 0) h += 360;
+	/// <summary>Hue of an RGB triple in degrees, 0-360.</summary>
+	private static double ComputeHueDegrees(byte r, byte g, byte b, int max, int delta)
+	{
+		double h;
+		if (max == r)
+		{
+			h = 60.0 * ((double)(g - b) / delta % 6);
+		}
+		else if (max == g)
+		{
+			h = 60.0 * ((double)(b - r) / delta + 2);
+		}
+		else
+		{
+			h = 60.0 * ((double)(r - g) / delta + 4);
+		}
 
-// Map hue to NI Mikro MK3 fixed palette indices 1-16.
-// 1=red, 2=orange, 3=light-orange, 4=warm-yellow, 5=yellow,
-// 6=lime, 7=green, 8=mint, 9=cyan, 10=turquoise, 11=blue,
-// 12=plum, 13=violet, 14=purple, 15=magenta, 16=fuchsia.
-byte colorIndex = h switch
-{
-< 10  => 1,
-< 25  => 2,
-< 38  => 3,
-< 52  => 4,
-< 75  => 5,
-< 105 => 6,
-< 135 => 7,
-< 165 => 8,
-< 195 => 9,
-< 225 => 10,
-< 248 => 11,
-< 263 => 12,
-< 278 => 13,
-< 293 => 14,
-< 315 => 15,
-< 350 => 16,
-_     => 1,
-};
+		return h < 0 ? h + 360 : h;
+	}
 
-return (byte)((colorIndex << 2) | intensity);
-}
+	/// <summary>
+	/// Maps a hue to the NI Mikro MK3 fixed palette indices 1-16:
+	/// 1=red, 2=orange, 3=light-orange, 4=warm-yellow, 5=yellow,
+	/// 6=lime, 7=green, 8=mint, 9=cyan, 10=turquoise, 11=blue,
+	/// 12=plum, 13=violet, 14=purple, 15=magenta, 16=fuchsia.
+	/// </summary>
+	private static byte HueToPaletteIndex(double hueDegrees)
+		=> hueDegrees switch
+		{
+			< 10 => 1,
+			< 25 => 2,
+			< 38 => 3,
+			< 52 => 4,
+			< 75 => 5,
+			< 105 => 6,
+			< 135 => 7,
+			< 165 => 8,
+			< 195 => 9,
+			< 225 => 10,
+			< 248 => 11,
+			< 263 => 12,
+			< 278 => 13,
+			< 293 => 14,
+			< 315 => 15,
+			< 350 => 16,
+			_ => 1,
+		};
 }

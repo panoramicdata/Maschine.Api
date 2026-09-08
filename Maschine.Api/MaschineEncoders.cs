@@ -53,21 +53,22 @@ internal sealed class MaschineEncoders : IEncoders
 			return;
 		}
 
-		var delta = current - previous;
-		if (delta > 127)
-		{
-			delta -= 256;
-		}
-		else if (delta < -127)
-		{
-			delta += 256;
-		}
-
 		_lastTouchStripAbsolute = current;
 
 		// Scale to keep existing demo thresholds responsive.
-		EncoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, delta * 16));
+		EncoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, WrapDelta(current - previous) * 16));
 	}
+
+	/// <summary>
+	/// Interprets the difference between two 8-bit absolute positions as the shortest signed
+	/// movement, so a wrap past 0x00/0xFF reads as a small step rather than a full-scale jump.
+	/// </summary>
+	private static int WrapDelta(int delta) => delta switch
+	{
+		> 127 => delta - 256,
+		< -127 => delta + 256,
+		_ => delta,
+	};
 
 	/// <summary>
 	/// Applies a 0x01 button report to the touch-strip decoder.

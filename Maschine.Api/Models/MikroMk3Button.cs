@@ -81,7 +81,7 @@ public enum MikroMk3Button
 	[Display(Name = "\u25CF REC\nCount-In")]
 	RecCountIn = 23,
 
-// Stop symbol (square) as unicode
+	// Stop symbol (square) as unicode
 	[Display(Name = "\u25A0 STOP")]
 	Stop = 24,
 

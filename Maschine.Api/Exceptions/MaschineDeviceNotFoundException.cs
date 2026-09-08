@@ -10,7 +10,7 @@ public sealed class MaschineDeviceNotFoundException : Exception
 	/// <param name="productId">The USB Product ID that was searched for.</param>
 	public MaschineDeviceNotFoundException(int vendorId, int productId)
 		: base($"No Maschine device found with VID 0x{vendorId:X4} / PID 0x{productId:X4}. " +
-		       "Ensure the device is connected and drivers are installed.")
+			   "Ensure the device is connected and drivers are installed.")
 	{
 		VendorId = vendorId;
 		ProductId = productId;

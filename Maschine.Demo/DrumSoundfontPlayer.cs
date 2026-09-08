@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Maschine.Demo;
 
-internal sealed class DrumSoundfontPlayer : IDisposable
+internal sealed partial class DrumSoundfontPlayer : IDisposable
 {
 	internal enum InstrumentMode
 	{
@@ -173,42 +173,48 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 			output.Init(provider);
 			output.Play();
 
-			foreach (var (preset, index) in resolvedPresets.Select((value, index) => (value, index)))
-			{
-				logger.LogInformation(
-					"Instrument state {State}: {Id}/{Name} mode={Mode} variant={Variant} channel={Channel} baseNote={BaseNote} program={Program} source={Path}",
-					index,
-					preset.Preset.Id,
-					preset.Preset.DisplayName,
-					preset.Preset.Mode,
-					preset.Preset.Variant,
-					preset.Preset.MidiChannel,
-					preset.Preset.BaseNote,
-					preset.Preset.ProgramNumber,
-					preset.LocalPath);
-			}
-
-			if (resolvedPresets.Count < s_soundFontPresets.Length)
-			{
-				var unavailable = s_soundFontPresets
-					.Where(p => resolvedPresets.All(r => !string.Equals(r.Preset.Id, p.Id, StringComparison.Ordinal)))
-					.Select(p => p.DisplayName)
-					.ToArray();
-				logger.LogWarning("Unavailable instrument states: {Unavailable}", string.Join(", ", unavailable));
-			}
-
-			logger.LogInformation("Demo instrument ready: {Name} ({Attribution})", activePreset.Preset.DisplayName, activePreset.Preset.Attribution);
+			LogResolvedPresets(logger, resolvedPresets, activePreset);
 			return new DrumSoundfontPlayer(logger, output, provider, resolvedPresets, activePreset, InstrumentMode.PadMode, presetsByMode);
 		}
-		catch (OperationCanceledException)
+		catch (Exception ex) when (ex is not OperationCanceledException)
 		{
-			throw;
-		}
-		catch (Exception ex)
-		{
+			// Cancellation is deliberately excluded by the filter so that shutdown propagates
+			// rather than being reported as an unavailable drum kit.
 			logger.LogWarning(ex, "Demo drum kit unavailable. Continuing without audio playback.");
 			return null;
 		}
+	}
+
+	private static void LogResolvedPresets(
+		ILogger logger,
+		IReadOnlyList<ResolvedSoundFontPreset> resolvedPresets,
+		ResolvedSoundFontPreset activePreset)
+	{
+		foreach (var (preset, index) in resolvedPresets.Select((value, index) => (value, index)))
+		{
+			logger.LogInformation(
+				"Instrument state {State}: {Id}/{Name} mode={Mode} variant={Variant} channel={Channel} baseNote={BaseNote} program={Program} source={Path}",
+				index,
+				preset.Preset.Id,
+				preset.Preset.DisplayName,
+				preset.Preset.Mode,
+				preset.Preset.Variant,
+				preset.Preset.MidiChannel,
+				preset.Preset.BaseNote,
+				preset.Preset.ProgramNumber,
+				preset.LocalPath);
+		}
+
+		if (resolvedPresets.Count < s_soundFontPresets.Length)
+		{
+			var unavailable = s_soundFontPresets
+				.Where(p => resolvedPresets.All(r => !string.Equals(r.Preset.Id, p.Id, StringComparison.Ordinal)))
+				.Select(p => p.DisplayName)
+				.ToArray();
+			logger.LogWarning("Unavailable instrument states: {Unavailable}", string.Join(", ", unavailable));
+		}
+
+		logger.LogInformation("Demo instrument ready: {Name} ({Attribution})", activePreset.Preset.DisplayName, activePreset.Preset.Attribution);
 	}
 
 	internal void SetVolumeFromStripLevel(int level)
@@ -235,31 +241,47 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 			return false;
 		}
 
+		var modeIndex = SelectVariant(mode, cycleVariant, presets.Count);
+		var preset = presets[modeIndex];
+		instrumentName = preset.Preset.DisplayName;
+		variantIndex = modeIndex;
+		variantCount = presets.Count;
+
+		if (!Equals(preset, _activePreset))
+		{
+			SwitchToPreset(mode, preset, variantIndex, variantCount);
+		}
+
+		return true;
+	}
+
+	/// <summary>
+	/// Makes <paramref name="mode"/> active and returns the variant index to play. Re-selecting the
+	/// mode that is already active advances to the next variant when <paramref name="cycleVariant"/>
+	/// is set; selecting a different mode keeps that mode's previously chosen variant.
+	/// </summary>
+	private int SelectVariant(InstrumentMode mode, bool cycleVariant, int presetCount)
+	{
 		var modeIndex = (int)mode;
 		if (_activeMode != mode)
 		{
 			_activeMode = mode;
 		}
-		else if (cycleVariant && presets.Count > 1)
+		else if (cycleVariant && presetCount > 1)
 		{
-			_selectedVariantByMode[modeIndex] = (_selectedVariantByMode[modeIndex] + 1) % presets.Count;
+			_selectedVariantByMode[modeIndex] = (_selectedVariantByMode[modeIndex] + 1) % presetCount;
 		}
 
-		if (_selectedVariantByMode[modeIndex] >= presets.Count)
+		if (_selectedVariantByMode[modeIndex] >= presetCount)
 		{
 			_selectedVariantByMode[modeIndex] = 0;
 		}
 
-		var preset = presets[_selectedVariantByMode[modeIndex]];
-		instrumentName = preset.Preset.DisplayName;
-		variantIndex = _selectedVariantByMode[modeIndex];
-		variantCount = presets.Count;
+		return _selectedVariantByMode[modeIndex];
+	}
 
-		if (Equals(preset, _activePreset))
-		{
-			return true;
-		}
-
+	private void SwitchToPreset(InstrumentMode mode, ResolvedSoundFontPreset preset, int variantIndex, int variantCount)
+	{
 		_provider.SwitchPreset(preset);
 		_activePreset = preset;
 		_logger.LogInformation(
@@ -272,7 +294,6 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 			preset.Preset.MidiChannel,
 			preset.Preset.BaseNote,
 			preset.Preset.ProgramNumber);
-		return true;
 	}
 
 	internal void PlayPad(int mappedPadIndex, int pressure)
@@ -363,327 +384,5 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 		logger.LogInformation("Windows default audio output: {Name}", defaultRender.FriendlyName);
 
 		return new WasapiOut(defaultRender, AudioClientShareMode.Shared, false, 80);
-	}
-
-	private static async Task<IReadOnlyList<ResolvedSoundFontPreset>> EnsureSoundFontsAsync(ILogger logger, CancellationToken cancellationToken)
-	{
-		var cacheDirectory = Path.Combine(
-			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-			"Maschine.Api",
-			"DemoAssets");
-
-		Directory.CreateDirectory(cacheDirectory);
-		var resolved = new List<ResolvedSoundFontPreset>(s_soundFontPresets.Length);
-		var total = s_soundFontPresets.Length;
-
-		for (var i = 0; i < s_soundFontPresets.Length; i++)
-		{
-			var preset = s_soundFontPresets[i];
-			var localPath = Path.Combine(cacheDirectory, preset.FileName);
-
-			if (File.Exists(localPath))
-			{
-				logger.LogInformation("[{Index}/{Total}] {Name,-10} {Bar} 100% (cached)", i + 1, total, preset.DisplayName, BuildProgressBar(1.0));
-				var cached = new ResolvedSoundFontPreset(preset, localPath);
-				resolved.Add(cached);
-				continue;
-			}
-
-			try
-			{
-				await DownloadWithProgressAsync(preset, localPath, i + 1, total, logger, cancellationToken).ConfigureAwait(false);
-				var downloaded = new ResolvedSoundFontPreset(preset, localPath);
-				resolved.Add(downloaded);
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				if (i == 0)
-				{
-					throw;
-				}
-
-				logger.LogWarning(ex, "Failed to download optional soundfont {Name}. One instrument variant will be unavailable.", preset.DisplayName);
-			}
-		}
-
-		return resolved;
-	}
-
-	private static async Task DownloadWithProgressAsync(
-		SoundFontPreset preset,
-		string soundFontPath,
-		int index,
-		int total,
-		ILogger logger,
-		CancellationToken cancellationToken)
-	{
-		logger.LogInformation("[{Index}/{Total}] {Name,-10} {Bar}   0% (downloading)", index, total, preset.DisplayName, BuildProgressBar(0.0));
-
-		var tempPath = soundFontPath + ".download";
-		if (File.Exists(tempPath))
-		{
-			File.Delete(tempPath);
-		}
-
-		using var httpClient = new HttpClient();
-		using var response = await httpClient.GetAsync(preset.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-		response.EnsureSuccessStatusCode();
-
-		var contentLength = response.Content.Headers.ContentLength;
-		await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-		await using (var destination = File.Create(tempPath))
-		{
-			var buffer = new byte[64 * 1024];
-			long totalRead = 0;
-			var lastPct = -1;
-
-			while (true)
-			{
-				var read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
-				if (read == 0)
-				{
-					break;
-				}
-
-				await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-				totalRead += read;
-
-				if (contentLength is null || contentLength <= 0)
-				{
-					continue;
-				}
-
-				var progress = Math.Clamp((double)totalRead / contentLength.Value, 0.0, 1.0);
-				var pct = (int)Math.Round(progress * 100.0);
-				if (pct == lastPct || pct % 5 != 0)
-				{
-					continue;
-				}
-
-				lastPct = pct;
-				logger.LogInformation("[{Index}/{Total}] {Name,-10} {Bar} {Percent,3}%", index, total, preset.DisplayName, BuildProgressBar(progress), pct);
-			}
-		}
-
-		if (File.Exists(soundFontPath))
-		{
-			File.Delete(soundFontPath);
-		}
-
-		File.Move(tempPath, soundFontPath);
-		logger.LogInformation("[{Index}/{Total}] {Name,-10} {Bar} 100%", index, total, preset.DisplayName, BuildProgressBar(1.0));
-	}
-
-	private static string BuildProgressBar(double progress)
-	{
-		const int width = 24;
-		var clamped = Math.Clamp(progress, 0.0, 1.0);
-		var filled = (int)Math.Round(clamped * width);
-		var builder = new StringBuilder(width + 2);
-		builder.Append('[');
-		builder.Append('#', filled);
-		builder.Append('.', width - filled);
-		builder.Append(']');
-		return builder.ToString();
-	}
-
-	private static Dictionary<InstrumentMode, IReadOnlyList<ResolvedSoundFontPreset>> BuildPresetsByMode(IReadOnlyList<ResolvedSoundFontPreset> presets)
-	{
-		return presets
-			.GroupBy(p => p.Preset.Mode)
-			.ToDictionary(
-				g => g.Key,
-				g => (IReadOnlyList<ResolvedSoundFontPreset>)g.OrderBy(p => p.Preset.Variant).ToArray());
-	}
-
-	private sealed record SoundFontPreset(
-		string Id,
-		InstrumentMode Mode,
-		int Variant,
-		string DisplayName,
-		string FileName,
-		string Url,
-		string Attribution,
-		int MidiChannel,
-		int BaseNote,
-		int ProgramNumber = -1);
-
-	private sealed record ResolvedSoundFontPreset(SoundFontPreset Preset, string LocalPath);
-
-	private sealed class DrumSynthWaveProvider : IWaveProvider
-	{
-		private const int BytesPerSample = sizeof(short);
-		private const int ChannelCount = 2;
-		private const int BytesPerFrame = BytesPerSample * ChannelCount;
-
-		private readonly ILogger _logger;
-		private readonly int _sampleRate;
-		private readonly object _gate = new();
-		private ResolvedSoundFontPreset _activePreset;
-		private Synthesizer _synthesizer;
-		private float[] _left = [];
-		private float[] _right = [];
-		private float _masterVolume = 0.5F;
-		private bool _readFailureLogged;
-
-		internal DrumSynthWaveProvider(ILogger logger, ResolvedSoundFontPreset activePreset, Synthesizer synthesizer, int sampleRate)
-		{
-			_logger = logger;
-			_activePreset = activePreset;
-			_sampleRate = sampleRate;
-			_synthesizer = synthesizer;
-			ApplyPresetProgram();
-			WaveFormat = new WaveFormat(sampleRate, 16, ChannelCount);
-		}
-
-		public WaveFormat WaveFormat { get; }
-
-		internal void SetMasterVolume(float volume)
-		{
-			lock (_gate)
-			{
-				_masterVolume = Math.Clamp(volume, 0F, 1F);
-			}
-		}
-
-		internal void SwitchPreset(ResolvedSoundFontPreset preset)
-		{
-			lock (_gate)
-			{
-				_synthesizer.NoteOffAll(true);
-				_activePreset = preset;
-				_synthesizer = new Synthesizer(preset.LocalPath, _sampleRate);
-				ApplyPresetProgram();
-			}
-		}
-
-		internal int GetNoteForPad(int padIndex)
-		{
-			lock (_gate)
-			{
-				return _activePreset.Preset.BaseNote + padIndex;
-			}
-		}
-
-		internal (string Id, string Name, int Channel, int BaseNote) GetActivePresetInfo()
-		{
-			lock (_gate)
-			{
-				return (
-					_activePreset.Preset.Id,
-					_activePreset.Preset.DisplayName,
-					_activePreset.Preset.MidiChannel,
-					_activePreset.Preset.BaseNote);
-			}
-		}
-
-		internal void Trigger(int midiNote, int velocity)
-		{
-			try
-			{
-				lock (_gate)
-				{
-					var channel = _activePreset.Preset.MidiChannel;
-					_synthesizer.NoteOff(channel, midiNote);
-					_synthesizer.NoteOn(channel, midiNote, velocity);
-				}
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Drum synth NoteOn failed (note {Note}, velocity {Velocity}).", midiNote, velocity);
-			}
-		}
-
-		public int Read(byte[] buffer, int offset, int count)
-		{
-			try
-			{
-				var frameCount = count / BytesPerFrame;
-				EnsureCapacity(frameCount);
-
-				float volume;
-				lock (_gate)
-				{
-					volume = _masterVolume;
-					_synthesizer.Render(_left.AsSpan(0, frameCount), _right.AsSpan(0, frameCount));
-				}
-
-				var index = offset;
-				for (var i = 0; i < frameCount; i++)
-				{
-					WriteSample(buffer, ref index, _left[i] * volume);
-					WriteSample(buffer, ref index, _right[i] * volume);
-				}
-
-				if (_readFailureLogged)
-				{
-					_readFailureLogged = false;
-					_logger.LogInformation("Drum synth render recovered after previous failure.");
-				}
-
-				return frameCount * BytesPerFrame;
-			}
-			catch (Exception ex)
-			{
-				if (!_readFailureLogged)
-				{
-					_readFailureLogged = true;
-					_logger.LogError(ex, "Drum synth render loop failed. Output will be silent until the render loop recovers.");
-				}
-
-				TryRecoverSynth(ex);
-
-				Array.Clear(buffer, offset, count);
-				return count;
-			}
-		}
-
-		private void TryRecoverSynth(Exception lastError)
-		{
-			try
-			{
-				lock (_gate)
-				{
-					_synthesizer = new Synthesizer(_activePreset.LocalPath, _sampleRate);
-					ApplyPresetProgram();
-				}
-
-				_logger.LogWarning(lastError, "Rebuilt drum synthesizer instance after render failure.");
-			}
-			catch (Exception recoveryEx)
-			{
-				_logger.LogError(recoveryEx, "Failed to rebuild drum synthesizer after render failure.");
-			}
-		}
-
-		private void EnsureCapacity(int frameCount)
-		{
-			if (_left.Length >= frameCount)
-			{
-				return;
-			}
-
-			_left = new float[frameCount];
-			_right = new float[frameCount];
-		}
-
-		private void ApplyPresetProgram()
-		{
-			var preset = _activePreset.Preset;
-			if (preset.ProgramNumber < 0)
-			{
-				return;
-			}
-
-			_synthesizer.ProcessMidiMessage(preset.MidiChannel, 0xC0, preset.ProgramNumber, 0);
-		}
-
-		private static void WriteSample(byte[] buffer, ref int index, float sample)
-		{
-			var clamped = Math.Clamp(sample, -1F, 1F);
-			var pcm = (short)Math.Round(clamped * short.MaxValue);
-			buffer[index++] = (byte)(pcm & 0xFF);
-			buffer[index++] = (byte)((pcm >> 8) & 0xFF);
-		}
 	}
 }

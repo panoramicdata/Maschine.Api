@@ -6,16 +6,45 @@ namespace Maschine.Api.Internal;
 
 internal static class BuiltInFonts
 {
-	internal static readonly IFont Proportional4 = new Proportional4Font();
-	internal static readonly IFont Proportional8 = new Proportional8Font();
-	internal static readonly IFont Proportional8Bold = new Proportional8BoldFont();
-	internal static readonly IFont Proportional12 = new Proportional12Font();
-	internal static readonly IFont Proportional12Bold = new Proportional12BoldFont();
+	internal static readonly IFont Proportional4 =
+		new ProportionalFont("Proportional4", DisplayFont.Font4Height, 4, 2,
+			c => ToUShortRows(DisplayFont.GetGlyph4x4(c)));
 
-	private sealed class Proportional4Font : IFont
+	internal static readonly IFont Proportional8 =
+		new ProportionalFont("Proportional8", DisplayFont.Font8Height, 8, 4,
+			c => ToUShortRows(DisplayFont.GetGlyph8x8Light(c)));
+
+	internal static readonly IFont Proportional8Bold =
+		new ProportionalFont("Proportional8Bold", DisplayFont.Font8Height, 8, 4,
+			c => ToUShortRows(DisplayFont.GetGlyph8x8(c)));
+
+	internal static readonly IFont Proportional12 =
+		new ProportionalFont("Proportional12", DisplayFont.Font12Height, 16, 5,
+			c => DisplayFont.GetGlyph12Regular(c).ToArray());
+
+	internal static readonly IFont Proportional12Bold =
+		new ProportionalFont("Proportional12Bold", DisplayFont.Font12Height, 16, 5,
+			c => DisplayFont.GetGlyph12Bold(c).ToArray());
+
+	/// <summary>
+	/// A built-in proportional font over printable ASCII. Each glyph is looked up as a fixed-width
+	/// bitmap and then trimmed to its inked width, so only the space character needs an explicit
+	/// width of its own.
+	/// </summary>
+	/// <param name="name">Font name reported by <see cref="IFont.Name"/>.</param>
+	/// <param name="height">Glyph height in pixels.</param>
+	/// <param name="maxBits">Width of the untrimmed glyph bitmap, in bits.</param>
+	/// <param name="spaceWidth">Rendered width of the space character, which has no ink to measure.</param>
+	/// <param name="lookup">Returns the untrimmed bitmap rows for a character.</param>
+	private sealed class ProportionalFont(
+		string name,
+		int height,
+		int maxBits,
+		int spaceWidth,
+		Func<char, ushort[]> lookup) : IFont
 	{
-		public string Name => "Proportional4";
-		public int Height => DisplayFont.Font4Height;
+		public string Name => name;
+		public int Height => height;
 		public bool IsMonospace => false;
 		public int? FixedWidth => null;
 
@@ -27,122 +56,9 @@ internal static class BuiltInFonts
 				return false;
 			}
 
-			var rows = ToUShortRows(DisplayFont.GetGlyph4x4((char)rune.Value));
-			var width = ComputeTrimmedWidth(rows, 4);
-			if (rune.Value == 0x20)
-			{
-				width = 2;
-			}
-
-			glyph = new FontGlyph(width, DisplayFont.Font4Height, TrimRows(rows, width));
-			return true;
-		}
-	}
-
-	private sealed class Proportional8Font : IFont
-	{
-		public string Name => "Proportional8";
-		public int Height => DisplayFont.Font8Height;
-		public bool IsMonospace => false;
-		public int? FixedWidth => null;
-
-		public bool TryGetGlyph(Rune rune, out FontGlyph glyph)
-		{
-			if (rune.Value < 0x20 || rune.Value > 0x7E)
-			{
-				glyph = default!;
-				return false;
-			}
-
-			var rows = ToUShortRows(DisplayFont.GetGlyph8x8Light((char)rune.Value));
-			var width = ComputeTrimmedWidth(rows, 8);
-			if (rune.Value == 0x20)
-			{
-				width = 4;
-			}
-
-			glyph = new FontGlyph(width, DisplayFont.Font8Height, TrimRows(rows, width));
-			return true;
-		}
-	}
-
-	private sealed class Proportional8BoldFont : IFont
-	{
-		public string Name => "Proportional8Bold";
-		public int Height => DisplayFont.Font8Height;
-		public bool IsMonospace => false;
-		public int? FixedWidth => null;
-
-		public bool TryGetGlyph(Rune rune, out FontGlyph glyph)
-		{
-			if (rune.Value < 0x20 || rune.Value > 0x7E)
-			{
-				glyph = default!;
-				return false;
-			}
-
-			var rows = ToUShortRows(DisplayFont.GetGlyph8x8((char)rune.Value));
-			var width = ComputeTrimmedWidth(rows, 8);
-			if (rune.Value == 0x20)
-			{
-				width = 4;
-			}
-
-			glyph = new FontGlyph(width, DisplayFont.Font8Height, TrimRows(rows, width));
-			return true;
-		}
-	}
-
-	private sealed class Proportional12Font : IFont
-	{
-		public string Name => "Proportional12";
-		public int Height => DisplayFont.Font12Height;
-		public bool IsMonospace => false;
-		public int? FixedWidth => null;
-
-		public bool TryGetGlyph(Rune rune, out FontGlyph glyph)
-		{
-			if (rune.Value < 0x20 || rune.Value > 0x7E)
-			{
-				glyph = default!;
-				return false;
-			}
-
-			var rows = DisplayFont.GetGlyph12Regular((char)rune.Value).ToArray();
-			var width = ComputeTrimmedWidth(rows, 16);
-			if (rune.Value == 0x20)
-			{
-				width = 5;
-			}
-
-			glyph = new FontGlyph(width, DisplayFont.Font12Height, TrimRows(rows, width));
-			return true;
-		}
-	}
-
-	private sealed class Proportional12BoldFont : IFont
-	{
-		public string Name => "Proportional12Bold";
-		public int Height => DisplayFont.Font12Height;
-		public bool IsMonospace => false;
-		public int? FixedWidth => null;
-
-		public bool TryGetGlyph(Rune rune, out FontGlyph glyph)
-		{
-			if (rune.Value < 0x20 || rune.Value > 0x7E)
-			{
-				glyph = default!;
-				return false;
-			}
-
-			var rows = DisplayFont.GetGlyph12Bold((char)rune.Value).ToArray();
-			var width = ComputeTrimmedWidth(rows, 16);
-			if (rune.Value == 0x20)
-			{
-				width = 5;
-			}
-
-			glyph = new FontGlyph(width, DisplayFont.Font12Height, TrimRows(rows, width));
+			var rows = lookup((char)rune.Value);
+			var width = rune.Value == 0x20 ? spaceWidth : ComputeTrimmedWidth(rows, maxBits);
+			glyph = new FontGlyph(width, height, TrimRows(rows, width));
 			return true;
 		}
 	}

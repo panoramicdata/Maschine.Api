@@ -10,8 +10,8 @@ internal static partial class DisplayFont
 	/// Source BDF: Adobe X11 75dpi <c>helvR10.bdf</c>, baseline-normalized to 12 rows.
 	/// License: permissive Adobe/DEC X11 terms (see THIRD-PARTY-NOTICES.md).
 	/// Bit convention: bit 0 is the leftmost pixel.
-    /// </summary>
-    internal static ReadOnlySpan<ushort> Font12x12HelvRegularGlyphs =>
+	/// </summary>
+	internal static ReadOnlySpan<ushort> Font12x12HelvRegularGlyphs =>
 [
     // 0x20 ( )
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -206,10 +206,10 @@ internal static partial class DisplayFont
 ];
 
 
-internal static ReadOnlySpan<ushort> Font12x12HelvBoldGlyphs =>
-[
-    // 0x20 ( )
-    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+	internal static ReadOnlySpan<ushort> Font12x12HelvBoldGlyphs =>
+	[
+		// 0x20 ( )
+		0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
     // 0x21 (!)
     0x0000, 0x0000, 0x0006, 0x0006, 0x0006, 0x0006, 0x0002, 0x0002, 0x0000, 0x0006, 0x0000, 0x0000,
     // 0x22 (")

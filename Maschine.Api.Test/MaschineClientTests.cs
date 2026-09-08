@@ -88,7 +88,7 @@ internal sealed class FakeHidDeviceFactory : IHidDeviceFactory
 {
 	private readonly FakeHidDevice? _device;
 
-	public FakeHidDeviceFactory(FakeHidDevice? device = null) => _device = device;
+	public FakeHidDeviceFactory(FakeHidDevice? device) => _device = device;
 
 	/// <inheritdoc/>
 	public IHidDevice? TryOpen(int vendorId, int productId, int deviceIndex) => _device;
@@ -264,7 +264,7 @@ public sealed class MaschineClientTests
 		await client.ConnectAsync();
 
 		KeyEvent? received = null;
-		client.Buttons.KeyEvent += (_, e) => { if (!received.HasValue) received = e; };
+		client.Buttons.KeyEvent += (_, e) => received ??= e;
 
 		var report = new byte[MikroMk3Protocol.ButtonReportLength];
 		report[0] = MikroMk3Protocol.ButtonReportId;

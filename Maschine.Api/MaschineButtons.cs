@@ -8,7 +8,7 @@ namespace Maschine.Api;
 /// <summary>
 /// Manages button state and LED brightness for the Maschine Mikro MK3.
 /// </summary>
-internal sealed class MaschineButtons : IButtons
+internal sealed partial class MaschineButtons : IButtons
 {
 	private const int PhysicalButtonCount = 40;
 	private const int DirectLedButtonCount = 39;
@@ -152,7 +152,10 @@ internal sealed class MaschineButtons : IButtons
 
 	private void ThrowIfLibraryManaged(int buttonIndex)
 	{
-		if (_allowExternalLedOverrides) return;
+		if (_allowExternalLedOverrides)
+		{
+			return;
+		}
 
 		if (buttonIndex < 0 || buttonIndex >= PhysicalButtonCount)
 		{
@@ -172,16 +175,24 @@ internal sealed class MaschineButtons : IButtons
 
 	private void SyncManagedKeyState(int buttonIndex, byte brightness)
 	{
-		if (!_allowExternalLedOverrides) return;
-		if (buttonIndex < 0 || buttonIndex >= PhysicalButtonCount) return;
-		if (!MikroMk3ButtonExtensions.TryFromIndex(buttonIndex, out _)) return;
-		if (_keyModes[buttonIndex] == KeyMode.EventsOnly) return;
+		if (!_allowExternalLedOverrides
+			|| buttonIndex < 0 || buttonIndex >= PhysicalButtonCount
+			|| !MikroMk3ButtonExtensions.TryFromIndex(buttonIndex, out _)
+			|| _keyModes[buttonIndex] == KeyMode.EventsOnly)
+		{
+			return;
+		}
+
 		_keyOnStates[buttonIndex] = brightness > 0;
 	}
 
 	private void SyncAllManagedKeyStates(byte brightness)
 	{
-		if (!_allowExternalLedOverrides) return;
+		if (!_allowExternalLedOverrides)
+		{
+			return;
+		}
+
 		for (var i = 0; i < DirectLedButtonCount; i++)
 		{
 			if (_keyModes[i] != KeyMode.EventsOnly)
@@ -272,374 +283,45 @@ internal sealed class MaschineButtons : IButtons
 			return;
 		}
 
+		ApplyButtonBits(report);
+		ApplyEncoderTouch(report);
+	}
+
+	private void ApplyButtonBits(byte[] report)
+	{
 		for (var i = 0; i < PhysicalButtonCount; i++)
 		{
 			var byteIndex = 1 + (i / 8);
 			var bitIndex = i % 8;
 			var isPressed = byteIndex < report.Length && ((report[byteIndex] >> bitIndex) & 1) == 1;
 
-			if (_states[i].IsPressed != isPressed)
+			if (_states[i].IsPressed == isPressed)
 			{
-				_states[i] = new ButtonState(i, isPressed);
+				continue;
+			}
 
-				if (MikroMk3ButtonExtensions.TryFromIndex(i, out var button) && KeyModeDefaults.IsDirectLedKey(button))
-				{
-					ProcessKeyModeEvent(button, isPressed);
-				}
+			_states[i] = new ButtonState(i, isPressed);
+
+			if (MikroMk3ButtonExtensions.TryFromIndex(i, out var button) && KeyModeDefaults.IsDirectLedKey(button))
+			{
+				ProcessKeyModeEvent(button, isPressed);
 			}
 		}
+	}
 
+	private void ApplyEncoderTouch(byte[] report)
+	{
 		// Parse encoder touch + absolute knob value
-		if (report.Length >= MikroMk3Protocol.ButtonReportLength)
-		{
-			var touch = MikroMk3Protocol.ParseEncoderTouchFromButtonReport(report);
-			if (touch != _lastEncoderTouch)
-			{
-				_lastEncoderTouch = touch;
-				EncoderTouchChanged?.Invoke(this, touch);
-			}
-		}
-	}
-
-	private void ConfigureKeyModes(MaschineClientOptions options)
-	{
-		for (var i = 0; i < _keyModes.Length; i++)
-		{
-			_keyModes[i] = KeyMode.EventsOnly;
-		}
-
-		var keyModes = options.KeyModes ?? KeyModeDefaults.Create();
-		foreach (var pair in keyModes)
-		{
-			if (!KeyModeDefaults.IsDirectLedKey(pair.Key))
-			{
-				throw new ArgumentException($"KeyModes contains '{pair.Key}' which does not have a directly-addressable LED.", nameof(options));
-			}
-
-			_keyModes[(int)pair.Key] = pair.Value;
-		}
-	}
-
-	private void ConfigureFlashOverrides(MaschineClientOptions options)
-	{
-		if (options.KeyFireFlashDurationOverridesMs is null)
+		if (report.Length < MikroMk3Protocol.ButtonReportLength)
 		{
 			return;
 		}
 
-		foreach (var pair in options.KeyFireFlashDurationOverridesMs)
+		var touch = MikroMk3Protocol.ParseEncoderTouchFromButtonReport(report);
+		if (touch != _lastEncoderTouch)
 		{
-			if (!KeyModeDefaults.IsDirectLedKey(pair.Key))
-			{
-				throw new ArgumentException($"KeyFireFlashDurationOverridesMs contains '{pair.Key}' which does not have a directly-addressable LED.", nameof(options));
-			}
-
-			_fireFlashDurationOverrideMs[(int)pair.Key] = pair.Value;
+			_lastEncoderTouch = touch;
+			EncoderTouchChanged?.Invoke(this, touch);
 		}
-	}
-
-	private RadioGroup[] ConfigureRadioGroups(MaschineClientOptions options)
-	{
-		if (options.KeyRadioButtonGroups is null || options.KeyRadioButtonGroups.Count == 0)
-		{
-			return [];
-		}
-
-		var groups = new List<RadioGroup>(options.KeyRadioButtonGroups.Count);
-		for (var i = 0; i < options.KeyRadioButtonGroups.Count; i++)
-		{
-			var configured = options.KeyRadioButtonGroups[i] ?? throw new ArgumentException("KeyRadioButtonGroups cannot contain null entries.", nameof(options));
-			if (configured.Keys.Count == 0)
-			{
-				throw new ArgumentException("Radio button group cannot be empty.", nameof(options));
-			}
-
-			var seen = new HashSet<int>();
-			var keys = new int[configured.Keys.Count];
-			for (var k = 0; k < configured.Keys.Count; k++)
-			{
-				var key = configured.Keys[k];
-				if (!KeyModeDefaults.IsDirectLedKey(key))
-				{
-					throw new ArgumentException($"Radio group contains '{key}' which does not have a directly-addressable LED.", nameof(options));
-				}
-
-				var index = (int)key;
-				if (!seen.Add(index))
-				{
-					throw new ArgumentException($"Radio group contains duplicate key '{key}'.", nameof(options));
-				}
-
-				if (_groupByButton[index] != -1)
-				{
-					throw new ArgumentException($"Key '{key}' appears in more than one radio group.", nameof(options));
-				}
-
-				_groupByButton[index] = i;
-				keys[k] = index;
-			}
-
-			groups.Add(new RadioGroup(configured.Mode, keys));
-		}
-
-		return [.. groups];
-	}
-
-	private void InitializeRadioGroupDefaults()
-	{
-		for (var i = 0; i < _radioGroups.Length; i++)
-		{
-			var group = _radioGroups[i];
-			if (group.Mode == RadioButtonGroupMode.AlwaysOneOn)
-			{
-				group.SelectedIndex = group.Keys[0];
-				var idx = group.SelectedIndex.Value;
-				_keyOnStates[idx] = true;
-				_ = SetLedInternalAsync(idx, ManagedOnBrightness, CancellationToken.None);
-			}
-		}
-	}
-
-	private void ProcessKeyModeEvent(MikroMk3Button button, bool isPressed)
-	{
-		var index = (int)button;
-		var mode = _keyModes[index];
-
-		if (mode == KeyMode.EventsOnly)
-		{
-			EmitKeyEvent(button, isPressed ? KeyEventType.KeyDown : KeyEventType.KeyUp, isPressed, _keyOnStates[index]);
-			return;
-		}
-
-		if (isPressed)
-		{
-			OnKeyDown(button, mode);
-		}
-		else
-		{
-			OnKeyUp(button, mode);
-		}
-	}
-
-	private void OnKeyDown(MikroMk3Button button, KeyMode mode)
-	{
-		var index = (int)button;
-		switch (mode)
-		{
-			case KeyMode.LatchEarly:
-				ApplyKeyToggle(button);
-				break;
-
-			case KeyMode.LatchLong:
-				if (!_keyOnStates[index])
-				{
-					SetKeyOnState(button, true, true);
-					_latchLongReleaseArmed[index] = false;
-				}
-				else
-				{
-					_latchLongReleaseArmed[index] = true;
-				}
-				break;
-
-			case KeyMode.LatchShort:
-				if (_keyOnStates[index])
-				{
-					SetKeyOnState(button, false, true);
-					_latchShortReleaseArmed[index] = false;
-				}
-				else
-				{
-					_latchShortReleaseArmed[index] = true;
-				}
-				break;
-
-			case KeyMode.OnWhenPressed:
-				SetKeyOnState(button, true, true);
-				break;
-
-			case KeyMode.FireEarly:
-				EmitKeyEvent(button, KeyEventType.KeyPressed, true, _keyOnStates[index]);
-				ApplyFireActivation(button);
-				break;
-		}
-	}
-
-	private void OnKeyUp(MikroMk3Button button, KeyMode mode)
-	{
-		var index = (int)button;
-		switch (mode)
-		{
-			case KeyMode.LatchLate:
-				ApplyKeyToggle(button);
-				break;
-
-			case KeyMode.LatchLong:
-				if (_keyOnStates[index] && _latchLongReleaseArmed[index])
-				{
-					SetKeyOnState(button, false, false);
-					_latchLongReleaseArmed[index] = false;
-				}
-				break;
-
-			case KeyMode.LatchShort:
-				if (!_keyOnStates[index] && _latchShortReleaseArmed[index])
-				{
-					SetKeyOnState(button, true, false);
-					_latchShortReleaseArmed[index] = false;
-				}
-				break;
-
-			case KeyMode.OnWhenPressed:
-				SetKeyOnState(button, false, false);
-				break;
-
-			case KeyMode.FireLate:
-				EmitKeyEvent(button, KeyEventType.KeyPressed, false, _keyOnStates[index]);
-				ApplyFireActivation(button);
-				break;
-		}
-	}
-
-	private void ApplyKeyToggle(MikroMk3Button button)
-	{
-		var index = (int)button;
-		SetKeyOnState(button, !_keyOnStates[index], _states[index].IsPressed);
-	}
-
-	private void ApplyFireActivation(MikroMk3Button button)
-	{
-		var index = (int)button;
-		if (_groupByButton[index] >= 0)
-		{
-			ActivateRadioGroupSelection(button);
-		}
-
-		_ = FlashFireLedAsync(button);
-	}
-
-	private void ActivateRadioGroupSelection(MikroMk3Button button)
-	{
-		var index = (int)button;
-		var groupIndex = _groupByButton[index];
-		if (groupIndex < 0)
-		{
-			return;
-		}
-
-		var group = _radioGroups[groupIndex];
-		var isSelected = group.SelectedIndex == index;
-		if (isSelected)
-		{
-			if (group.Mode == RadioButtonGroupMode.OneOrZeroOn)
-			{
-				SetKeyOnState(button, false, _states[index].IsPressed);
-				group.SelectedIndex = null;
-			}
-
-			return;
-		}
-
-		if (group.SelectedIndex.HasValue)
-		{
-			SetKeyOnState((MikroMk3Button)group.SelectedIndex.Value, false, _states[group.SelectedIndex.Value].IsPressed);
-		}
-
-		SetKeyOnState(button, true, _states[index].IsPressed);
-		group.SelectedIndex = index;
-	}
-
-	private void SetKeyOnState(MikroMk3Button button, bool isOn, bool isPressed)
-	{
-		var index = (int)button;
-		var groupIndex = _groupByButton[index];
-		if (groupIndex >= 0)
-		{
-			var group = _radioGroups[groupIndex];
-			if (!isOn && group.SelectedIndex == index && group.Mode == RadioButtonGroupMode.AlwaysOneOn)
-			{
-				return;
-			}
-
-			if (isOn)
-			{
-				foreach (var otherIndex in group.Keys)
-				{
-					if (otherIndex == index || !_keyOnStates[otherIndex])
-					{
-						continue;
-					}
-
-					_keyOnStates[otherIndex] = false;
-					_ = SetLedInternalAsync(otherIndex, 0, CancellationToken.None);
-					EmitKeyEvent((MikroMk3Button)otherIndex, KeyEventType.KeyOff, _states[otherIndex].IsPressed, false);
-				}
-
-				group.SelectedIndex = index;
-			}
-			else if (group.SelectedIndex == index)
-			{
-				group.SelectedIndex = null;
-			}
-		}
-
-		if (_keyOnStates[index] == isOn)
-		{
-			return;
-		}
-
-		_keyOnStates[index] = isOn;
-		_ = SetLedInternalAsync(index, isOn ? ManagedOnBrightness : (byte)0, CancellationToken.None);
-		EmitKeyEvent(button, isOn ? KeyEventType.KeyOn : KeyEventType.KeyOff, isPressed, isOn);
-	}
-
-	private void EmitKeyEvent(MikroMk3Button button, KeyEventType type, bool isPressed, bool isOn)
-		=> KeyEvent?.Invoke(this, new KeyEvent(button, type, isPressed, isOn));
-
-	private async Task FlashFireLedAsync(MikroMk3Button button)
-	{
-		var index = (int)button;
-		var duration = _fireFlashDurationOverrideMs[index] ?? _globalFireFlashDurationMs;
-		if (duration <= 0)
-		{
-			return;
-		}
-
-		var generation = Interlocked.Increment(ref _flashGenerationByButton[index]);
-		try
-		{
-			await SetLedInternalAsync(index, ManagedOnBrightness, CancellationToken.None).ConfigureAwait(false);
-			await Task.Delay(duration).ConfigureAwait(false);
-			if (Volatile.Read(ref _flashGenerationByButton[index]) != generation)
-			{
-				return;
-			}
-
-			if (_keyOnStates[index])
-			{
-				await SetLedInternalAsync(index, ManagedOnBrightness, CancellationToken.None).ConfigureAwait(false);
-			}
-			else
-			{
-				await SetLedInternalAsync(index, 0, CancellationToken.None).ConfigureAwait(false);
-			}
-		}
-		catch
-		{
-			// Fire LED pulse is best-effort.
-		}
-	}
-
-	private sealed class RadioGroup
-	{
-		internal RadioGroup(RadioButtonGroupMode mode, int[] keys)
-		{
-			Mode = mode;
-			Keys = keys;
-		}
-
-		internal RadioButtonGroupMode Mode { get; }
-		internal int[] Keys { get; }
-		internal int? SelectedIndex { get; set; }
 	}
 }

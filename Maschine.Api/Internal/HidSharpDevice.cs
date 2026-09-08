@@ -39,8 +39,8 @@ internal sealed class HidSharpDevice : IHidDevice
 		}
 		catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
 		{
-			// HidSharp closes the stream to unblock a pending read during shutdown;
-			// translate to the expected cancellation exception.
+			// HidSharp closes the stream to unblock a pending read during shutdown, so
+			// translate the resulting disposal into the cancellation the caller expects.
 			throw new OperationCanceledException(cancellationToken);
 		}
 

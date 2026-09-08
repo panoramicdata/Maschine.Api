@@ -146,7 +146,28 @@ public sealed class MaschineClient : IMaschineClient
 	/// <inheritdoc/>
 	public async Task DisconnectAsync()
 	{
-		// Best-effort visual cleanup so the controller is left dark on shutdown.
+		await BlankControllerAsync().ConfigureAwait(false);
+
+		if (_readLoopCts is not null)
+		{
+			await _readLoopCts.CancelAsync().ConfigureAwait(false);
+		}
+
+		// Dispose the device before awaiting the read loop so a blocking HID read is interrupted.
+		_device?.Dispose();
+		_device = null;
+
+		await WaitForReadLoopAsync().ConfigureAwait(false);
+		ReleaseSubsystems();
+		MaschineClientLog.Disconnected(_logger);
+	}
+
+	/// <summary>
+	/// Best-effort visual cleanup so the controller is left dark on shutdown. Failures are ignored:
+	/// the device may already be gone, and disconnect must complete regardless.
+	/// </summary>
+	private async Task BlankControllerAsync()
+	{
 		try
 		{
 			if (_pads is not null)
@@ -173,32 +194,31 @@ public sealed class MaschineClient : IMaschineClient
 		{
 			// Ignore cleanup failures during disconnect.
 		}
+	}
 
-		if (_readLoopCts is not null)
+	private async Task WaitForReadLoopAsync()
+	{
+		if (_readLoop is null)
 		{
-			await _readLoopCts.CancelAsync().ConfigureAwait(false);
+			return;
 		}
 
-		// Dispose the device before awaiting the read loop so a blocking HID read is interrupted.
-		_device?.Dispose();
-		_device = null;
-
-		if (_readLoop is not null)
+		try
 		{
-			try
-			{
-				await _readLoop.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-			}
-			catch (OperationCanceledException)
-			{
-				// Expected on disconnect.
-			}
-			catch (TimeoutException)
-			{
-				// Some HID backends can ignore cancellation while blocked; continue shutdown.
-			}
+			await _readLoop.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 		}
+		catch (OperationCanceledException)
+		{
+			// Expected on disconnect.
+		}
+		catch (TimeoutException)
+		{
+			// Some HID backends can ignore cancellation while blocked; continue shutdown.
+		}
+	}
 
+	private void ReleaseSubsystems()
+	{
 		_pads = null;
 		_unifiedLights?.Dispose();
 		_unifiedLights = null;
@@ -206,7 +226,6 @@ public sealed class MaschineClient : IMaschineClient
 		_dotMatrixDisplay = null;
 		_buttons = null;
 		_encoders = null;
-		MaschineClientLog.Disconnected(_logger);
 	}
 
 	/// <inheritdoc/>
@@ -321,34 +340,7 @@ public sealed class MaschineClient : IMaschineClient
 
 		try
 		{
-			if (_options.TraceInputReports && _logger.IsEnabled(LogLevel.Debug))
-			{
-				var kind = report[0] switch
-				{
-					MikroMk3Protocol.PadPressureReportId => "PAD",
-					MikroMk3Protocol.ButtonReportId => "BUTTON",
-					_ => "UNKNOWN",
-				};
-				var now = DateTime.UtcNow;
-				var timestamp = now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-				var dtAll = _previousTraceTime.HasValue
-					? $"dtAll={((now - _previousTraceTime.Value).TotalMilliseconds):0.0}ms"
-					: "dtAll=init";
-				var dtId = _previousTraceTimesById.TryGetValue(report[0], out var previousForId)
-					? $"dtId={((now - previousForId).TotalMilliseconds):0.0}ms"
-					: "dtId=init";
-				_previousTraceTime = now;
-				_previousTraceTimesById[report[0]] = now;
-
-				var hex = BitConverter.ToString(report).Replace('-', ' ');
-				var diff = BuildTraceDiff(report);
-				var head = report.Length >= 4
-					? $"head=[{report[1]:X2} {report[2]:X2} {report[3]:X2}] "
-					: string.Empty;
-#pragma warning disable CA1873
-				MaschineClientLog.TraceLine(_logger, $"[{timestamp}Z] Input {kind} ID=0x{report[0]:X2} len={report.Length} {dtAll} {dtId} {diff} {head}bytes=[{hex}]");
-#pragma warning restore CA1873
-			}
+			TraceInputReport(report);
 
 			switch (report[0])
 			{
@@ -370,6 +362,41 @@ public sealed class MaschineClient : IMaschineClient
 		{
 			MaschineClientLog.MalformedReport(_logger, report[0], report.Length);
 		}
+	}
+
+	[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+	private void TraceInputReport(byte[] report)
+	{
+		if (!_options.TraceInputReports || !_logger.IsEnabled(LogLevel.Debug))
+		{
+			return;
+		}
+
+		var kind = report[0] switch
+		{
+			MikroMk3Protocol.PadPressureReportId => "PAD",
+			MikroMk3Protocol.ButtonReportId => "BUTTON",
+			_ => "UNKNOWN",
+		};
+		var now = DateTime.UtcNow;
+		var timestamp = now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+		var dtAll = _previousTraceTime.HasValue
+			? $"dtAll={((now - _previousTraceTime.Value).TotalMilliseconds):0.0}ms"
+			: "dtAll=init";
+		var dtId = _previousTraceTimesById.TryGetValue(report[0], out var previousForId)
+			? $"dtId={((now - previousForId).TotalMilliseconds):0.0}ms"
+			: "dtId=init";
+		_previousTraceTime = now;
+		_previousTraceTimesById[report[0]] = now;
+
+		var hex = BitConverter.ToString(report).Replace('-', ' ');
+		var diff = BuildTraceDiff(report);
+		var head = report.Length >= 4
+			? $"head=[{report[1]:X2} {report[2]:X2} {report[3]:X2}] "
+			: string.Empty;
+#pragma warning disable CA1873
+		MaschineClientLog.TraceLine(_logger, $"[{timestamp}Z] Input {kind} ID=0x{report[0]:X2} len={report.Length} {dtAll} {dtId} {diff} {head}bytes=[{hex}]");
+#pragma warning restore CA1873
 	}
 
 	private string BuildTraceDiff(byte[] report)

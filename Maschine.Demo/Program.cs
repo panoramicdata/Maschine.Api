@@ -278,7 +278,14 @@ try
 	}
 	else
 	{
-		await demo.RunAsync(cts.Token, runLedSelfTest, runFullBrightness, runPadColorSpace, runDisplayTest, runDisplayZebra, runDisplayShowcase);
+		var modes = new DemoModes(
+			LedSelfTest: runLedSelfTest,
+			FullBrightness: runFullBrightness,
+			PadColorSpace: runPadColorSpace,
+			DisplayTest: runDisplayTest,
+			DisplayZebra: runDisplayZebra,
+			DisplayShowcase: runDisplayShowcase);
+		await demo.RunAsync(modes, cts.Token);
 	}
 }
 catch (OperationCanceledException) when (cts.IsCancellationRequested)
