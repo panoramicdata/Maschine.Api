@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0] - 2026-09-08
 
 ### Added
 - Initial release supporting Maschine Mikro MK3 (VID 0x17CC / PID 0x1700)
