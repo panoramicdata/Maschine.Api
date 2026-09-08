@@ -1,3 +1,4 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net10.0</TargetFrameworks>
@@ -19,6 +20,9 @@
     <PackageReleaseNotes>Changelog can be found at https://github.com/panoramicdata/Maschine.Api/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NeutralResourcesLanguage>en</NeutralResourcesLanguage>
+    <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <None Include="Icon.png" Pack="true" PackagePath="" />
