@@ -28,12 +28,16 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      # xunit.v3 runs on Microsoft Testing Platform, not VSTest, so the VSTest-only
+      # --collect:"XPlat Code Coverage" is not understood here: it reports "Zero tests ran"
+      # and exits 5. Coverage comes from Microsoft.Testing.Extensions.CodeCoverage instead.
       - name: Test with coverage
         run: >
           dotnet test
           --no-build
           --configuration Release
-          --collect:"XPlat Code Coverage"
+          --coverage
+          --coverage-output-format cobertura
           --results-directory ./coverage
 
       - name: Upload coverage
