@@ -282,12 +282,19 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 		_logger.LogWarning("Demo drum playback engine stopped unexpectedly without an exception.");
 	}
 
-	private static WasapiOut CreateDefaultOutput(ILogger logger)
+	private static WasapiPlayer CreateDefaultOutput(ILogger logger)
 	{
 		using var enumerator = new MMDeviceEnumerator();
 		var defaultRender = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
 		logger.LogInformation("Windows default audio output: {Name}", defaultRender.FriendlyName);
 
-		return new WasapiOut(defaultRender, AudioClientShareMode.Shared, false, 80);
+		// Shared mode with polling sync at 80 ms, matching what the old WasapiOut constructor
+		// arguments requested before NAudio 3 replaced it with this builder.
+		return new WasapiPlayerBuilder()
+			.WithDevice(defaultRender)
+			.WithSharedMode()
+			.WithPollingSync()
+			.WithLatency(80)
+			.Build();
 	}
 }
