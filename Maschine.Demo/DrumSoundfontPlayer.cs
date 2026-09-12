@@ -2,6 +2,7 @@ using MeltySynth;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using System.Runtime.Versioning;
 using System.Text;
 
 namespace Maschine.Demo;
@@ -53,6 +54,14 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 
 	internal static async Task<DrumSoundfontPlayer?> CreateAsync(ILogger logger, CancellationToken cancellationToken)
 	{
+		if (!OperatingSystem.IsWindows())
+		{
+			// Audio output is WASAPI-only. Everything else in the demo is cross-platform, so the
+			// demo runs without sound rather than refusing to start.
+			logger.LogWarning("Audio output requires Windows. Demo drum kit disabled.");
+			return null;
+		}
+
 		try
 		{
 			logger.LogInformation("Preparing instrument soundfonts (download if missing): {Count}", SoundFontLibrary.Catalogue.Length);
@@ -282,12 +291,25 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 		_logger.LogWarning("Demo drum playback engine stopped unexpectedly without an exception.");
 	}
 
-	private static WasapiOut CreateDefaultOutput(ILogger logger)
+	/// <summary>
+	/// Opens the Windows default render endpoint. WASAPI exists only on Windows, so this is
+	/// annotated rather than the whole program being retargeted; callers reach it through the
+	/// <see cref="OperatingSystem.IsWindows"/> guard in <see cref="CreateAsync"/>.
+	/// </summary>
+	[SupportedOSPlatform("windows")]
+	private static WasapiPlayer CreateDefaultOutput(ILogger logger)
 	{
 		using var enumerator = new MMDeviceEnumerator();
 		var defaultRender = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
 		logger.LogInformation("Windows default audio output: {Name}", defaultRender.FriendlyName);
 
-		return new WasapiOut(defaultRender, AudioClientShareMode.Shared, false, 80);
+		// Shared mode with polling sync at 80 ms, matching what the old WasapiOut constructor
+		// arguments requested before NAudio 3 replaced it with this builder.
+		return new WasapiPlayerBuilder()
+			.WithDevice(defaultRender)
+			.WithSharedMode()
+			.WithPollingSync()
+			.WithLatency(80)
+			.Build();
 	}
 }
