@@ -1,17 +1,111 @@
-using MeltySynth;
 using Microsoft.Extensions.Logging;
-using NAudio.Wave;
 using System.Text;
 
 namespace Maschine.Demo;
 
 /// <summary>
-/// Soundfont acquisition for <see cref="DrumSoundfontPlayer"/>: locating the cached files,
-/// downloading any that are missing, and the preset records describing them.
+/// The soundfonts the demo plays: the catalogue, where they are cached on disk, and the
+/// download that fetches any that are missing.
 /// </summary>
-internal sealed partial class DrumSoundfontPlayer
+internal static class SoundFontLibrary
 {
-	private static async Task<IReadOnlyList<ResolvedSoundFontPreset>> EnsureSoundFontsAsync(ILogger logger, CancellationToken cancellationToken)
+	/// <summary>Every soundfont the demo can use, in presentation order.</summary>
+	internal static readonly SoundFontPreset[] Catalogue =
+	[
+		new(
+		"pad-brd",
+		DrumSoundfontPlayer.InstrumentMode.PadMode,
+		0,
+		"Pad BRD Kit",
+		"Processed_BRD_Kit.sf2",
+		"https://musical-artifacts.com/artifacts/7365/Processed_BRD_Kit.sf2",
+		"Processed BRD Kit (public domain) via Musical Artifacts",
+		MidiChannel: 9,
+		BaseNote: 36),
+	new(
+		"pad-zappa",
+		DrumSoundfontPlayer.InstrumentMode.PadMode,
+		1,
+		"Pad Zappa Kit",
+		"ZappaKit.sf2",
+		"https://archive.org/download/ZappaKit.sf2/ZappaKit.sf2",
+		"ZappaKit via Internet Archive",
+		MidiChannel: 9,
+		BaseNote: 36),
+	new(
+		"pad-retro",
+		DrumSoundfontPlayer.InstrumentMode.PadMode,
+		2,
+		"Pad Retro",
+		"Retro_Synth_PC.sf2",
+		"https://archive.org/download/xmplayer.-7z/Retro_Synth_PC.sf2",
+		"Retro Synth PC via Internet Archive",
+		MidiChannel: 9,
+		BaseNote: 36),
+	new(
+		"keys-space",
+		DrumSoundfontPlayer.InstrumentMode.Keyboard,
+		1,
+		"Space Keys",
+		"LX-Space.sf2",
+		"https://archive.org/download/LXSpace/LX-Space.sf2",
+		"LX-Space via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 60),
+	new(
+		"keys-piano",
+		DrumSoundfontPlayer.InstrumentMode.Keyboard,
+		0,
+		"Stein Piano",
+		"WST25FStein_00Sep22.sf2",
+		"https://archive.org/download/WST25FStein_00Sep22.sf2/WST25FStein_00Sep22.sf2",
+		"WST25FStein via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 62),
+	new(
+		"keys-retro",
+		DrumSoundfontPlayer.InstrumentMode.Keyboard,
+		2,
+		"JV Harpsichord",
+		"Roland JV-1080 GM.sf2",
+		"https://archive.org/download/gabedudleyssf2collection/Roland%20JV-1080%20GM.sf2",
+		"Roland JV-1080 GM via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 64,
+		ProgramNumber: 6),
+	new(
+		"chords-space",
+		DrumSoundfontPlayer.InstrumentMode.Chords,
+		0,
+		"Space Chords",
+		"LX-Space.sf2",
+		"https://archive.org/download/LXSpace/LX-Space.sf2",
+		"LX-Space via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 48),
+	new(
+		"chords-zappa",
+		DrumSoundfontPlayer.InstrumentMode.Chords,
+		1,
+		"Zappa Chords",
+		"ZappaKit.sf2",
+		"https://archive.org/download/ZappaKit.sf2/ZappaKit.sf2",
+		"ZappaKit via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 52),
+	new(
+		"chords-retro",
+		DrumSoundfontPlayer.InstrumentMode.Chords,
+		2,
+		"Retro Synth",
+		"Retro_Synth_PC.sf2",
+		"https://archive.org/download/xmplayer.-7z/Retro_Synth_PC.sf2",
+		"Retro Synth PC via Internet Archive",
+		MidiChannel: 0,
+		BaseNote: 55),
+];
+
+	internal static async Task<IReadOnlyList<ResolvedSoundFontPreset>> EnsureSoundFontsAsync(ILogger logger, CancellationToken cancellationToken)
 	{
 		var cacheDirectory = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -19,12 +113,12 @@ internal sealed partial class DrumSoundfontPlayer
 			"DemoAssets");
 
 		Directory.CreateDirectory(cacheDirectory);
-		var resolved = new List<ResolvedSoundFontPreset>(s_soundFontPresets.Length);
-		var total = s_soundFontPresets.Length;
+		var resolved = new List<ResolvedSoundFontPreset>(Catalogue.Length);
+		var total = Catalogue.Length;
 
-		for (var i = 0; i < s_soundFontPresets.Length; i++)
+		for (var i = 0; i < Catalogue.Length; i++)
 		{
-			var preset = s_soundFontPresets[i];
+			var preset = Catalogue[i];
 			var localPath = Path.Combine(cacheDirectory, preset.FileName);
 
 			if (File.Exists(localPath))
@@ -154,7 +248,7 @@ internal sealed partial class DrumSoundfontPlayer
 		return builder.ToString();
 	}
 
-	private static Dictionary<InstrumentMode, IReadOnlyList<ResolvedSoundFontPreset>> BuildPresetsByMode(IReadOnlyList<ResolvedSoundFontPreset> presets)
+	internal static Dictionary<DrumSoundfontPlayer.InstrumentMode, IReadOnlyList<ResolvedSoundFontPreset>> BuildPresetsByMode(IReadOnlyList<ResolvedSoundFontPreset> presets)
 	{
 		return presets
 			.GroupBy(p => p.Preset.Mode)
@@ -162,18 +256,4 @@ internal sealed partial class DrumSoundfontPlayer
 				g => g.Key,
 				g => (IReadOnlyList<ResolvedSoundFontPreset>)g.OrderBy(p => p.Preset.Variant).ToArray());
 	}
-
-	private sealed record SoundFontPreset(
-		string Id,
-		InstrumentMode Mode,
-		int Variant,
-		string DisplayName,
-		string FileName,
-		string Url,
-		string Attribution,
-		int MidiChannel,
-		int BaseNote,
-		int ProgramNumber = -1);
-
-	private sealed record ResolvedSoundFontPreset(SoundFontPreset Preset, string LocalPath);
 }

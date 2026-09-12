@@ -10,12 +10,11 @@ namespace Maschine.Api.Widgets;
 /// Widget-based compositor for the 128x32 dot-matrix display.
 /// Widgets are stacked in insertion order and must not overlap.
 /// </summary>
-public sealed partial class DotMatrixDashboard
+public sealed class DotMatrixDashboard
 {
 	private const int DisplayWidth = DisplayFont.DisplayWidth;
 	private const int DisplayHeight = DisplayFont.DisplayHeight;
 	private const int RowStride = DisplayWidth / 8;
-	private static readonly Rune[] s_missingRunes = "[X]".EnumerateRunes().ToArray();
 
 	private readonly List<IDotMatrixWidget> _widgets = [];
 
@@ -131,7 +130,7 @@ public sealed partial class DotMatrixDashboard
 		var bitmap = new byte[DisplayHeight * RowStride];
 		foreach (var widget in _widgets)
 		{
-			RenderWidget(bitmap, widget);
+			DotMatrixRenderer.RenderWidget(bitmap, widget);
 		}
 
 		Rendered?.Invoke(this, EventArgs.Empty);

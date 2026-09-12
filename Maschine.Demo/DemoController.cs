@@ -89,8 +89,14 @@ internal sealed partial class DemoController : IAsyncDisposable
 	private int _audioFrame;
 	private int _selectedDashboardIndex;
 	private int _touchStripLevel;
-	private int _touchStripRenderedLevel = -1;
-	private DrumSoundfontPlayer.InstrumentMode _activeInstrumentMode = DrumSoundfontPlayer.InstrumentMode.PadMode;
+
+	// The event signatures carry a sender this demo never uses. Subscribing through a lambda
+	// discards it at the boundary, so no handler needs a parameter it ignores; the delegates are
+	// stored because unsubscribing requires the same instances that were added.
+	private EventHandler<KeyEvent>? _keyEventHandler;
+	private EventHandler<EncoderTouchState>? _encoderTouchChangedHandler;
+	private EventHandler<PadState>? _padChangedHandler;
+	private EventHandler<EncoderDelta>? _encoderChangedHandler;
 
 	private readonly IMaschineClient _client;
 	private readonly ILogger<DemoController> _logger;
@@ -191,10 +197,15 @@ internal sealed partial class DemoController : IAsyncDisposable
 			return;
 		}
 
-		_buttons.KeyEvent += OnKeyEvent;
-		_buttons.EncoderTouchChanged += OnEncoderTouchChanged;
-		_pads.PadChanged += OnPadChanged;
-		_encoders.EncoderChanged += OnEncoderChanged;
+		_keyEventHandler = (_, e) => OnKeyEvent(e);
+		_encoderTouchChangedHandler = (_, state) => OnEncoderTouchChanged(state);
+		_padChangedHandler = (_, state) => OnPadChanged(state);
+		_encoderChangedHandler = (_, delta) => OnEncoderChanged(delta);
+
+		_buttons.KeyEvent += _keyEventHandler;
+		_buttons.EncoderTouchChanged += _encoderTouchChangedHandler;
+		_pads.PadChanged += _padChangedHandler;
+		_encoders.EncoderChanged += _encoderChangedHandler;
 		_subscribed = true;
 	}
 
@@ -205,10 +216,10 @@ internal sealed partial class DemoController : IAsyncDisposable
 			return;
 		}
 
-		_buttons.KeyEvent -= OnKeyEvent;
-		_buttons.EncoderTouchChanged -= OnEncoderTouchChanged;
-		_pads.PadChanged -= OnPadChanged;
-		_encoders.EncoderChanged -= OnEncoderChanged;
+		_buttons.KeyEvent -= _keyEventHandler;
+		_buttons.EncoderTouchChanged -= _encoderTouchChangedHandler;
+		_pads.PadChanged -= _padChangedHandler;
+		_encoders.EncoderChanged -= _encoderChangedHandler;
 		_subscribed = false;
 	}
 
@@ -267,14 +278,7 @@ internal sealed partial class DemoController : IAsyncDisposable
 
 	public async ValueTask DisposeAsync()
 	{
-		if (_subscribed && _buttons is not null && _pads is not null && _encoders is not null)
-		{
-			_buttons.KeyEvent -= OnKeyEvent;
-			_buttons.EncoderTouchChanged -= OnEncoderTouchChanged;
-			_pads.PadChanged -= OnPadChanged;
-			_encoders.EncoderChanged -= OnEncoderChanged;
-			_subscribed = false;
-		}
+		Unsubscribe();
 
 		_touchStripUpdateGate.Dispose();
 		_drumPlayer?.Dispose();

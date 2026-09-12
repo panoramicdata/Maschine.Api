@@ -11,7 +11,12 @@ namespace Maschine.Demo;
 /// </summary>
 internal sealed partial class DemoController
 {
-	private void OnEncoderTouchChanged(object? _, EncoderTouchState state)
+	// Owned by the input half: the touch-strip level last pushed to the device, and the
+	// instrument mode the mode buttons select between.
+	private int _touchStripRenderedLevel = -1;
+	private DrumSoundfontPlayer.InstrumentMode _activeInstrumentMode = DrumSoundfontPlayer.InstrumentMode.PadMode;
+
+	private void OnEncoderTouchChanged(EncoderTouchState state)
 	{
 		var dashboardIndex = state.KnobValue % _dashboards.Length;
 		var changed = false;
@@ -32,7 +37,7 @@ internal sealed partial class DemoController
 		}
 	}
 
-	private void OnKeyEvent(object? _, KeyEvent evt)
+	private void OnKeyEvent(KeyEvent evt)
 	{
 		if (_buttons is null)
 		{
@@ -134,7 +139,7 @@ internal sealed partial class DemoController
 		return false;
 	}
 
-	private void OnPadChanged(object? _, PadState state)
+	private void OnPadChanged(PadState state)
 	{
 		const int PressThreshold = 220;
 		const int ReleaseThreshold = 80;
@@ -205,7 +210,7 @@ internal sealed partial class DemoController
 		_ = TrySetPadColorAsync(state.Index, PadColor.White);
 	}
 
-	private void OnEncoderChanged(object? _, EncoderDelta delta)
+	private void OnEncoderChanged(EncoderDelta delta)
 	{
 		const int TouchStripNoiseFloor = 20;
 		const int EncoderNoiseFloor = 24;

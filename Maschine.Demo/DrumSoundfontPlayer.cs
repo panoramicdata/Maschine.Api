@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Maschine.Demo;
 
-internal sealed partial class DrumSoundfontPlayer : IDisposable
+internal sealed class DrumSoundfontPlayer : IDisposable
 {
 	internal enum InstrumentMode
 	{
@@ -14,101 +14,6 @@ internal sealed partial class DrumSoundfontPlayer : IDisposable
 		Keyboard = 1,
 		Chords = 2,
 	}
-
-	private static readonly SoundFontPreset[] s_soundFontPresets =
-	[
-		new(
-			"pad-brd",
-			InstrumentMode.PadMode,
-			0,
-			"Pad BRD Kit",
-			"Processed_BRD_Kit.sf2",
-			"https://musical-artifacts.com/artifacts/7365/Processed_BRD_Kit.sf2",
-			"Processed BRD Kit (public domain) via Musical Artifacts",
-			MidiChannel: 9,
-			BaseNote: 36),
-		new(
-			"pad-zappa",
-			InstrumentMode.PadMode,
-			1,
-			"Pad Zappa Kit",
-			"ZappaKit.sf2",
-			"https://archive.org/download/ZappaKit.sf2/ZappaKit.sf2",
-			"ZappaKit via Internet Archive",
-			MidiChannel: 9,
-			BaseNote: 36),
-		new(
-			"pad-retro",
-			InstrumentMode.PadMode,
-			2,
-			"Pad Retro",
-			"Retro_Synth_PC.sf2",
-			"https://archive.org/download/xmplayer.-7z/Retro_Synth_PC.sf2",
-			"Retro Synth PC via Internet Archive",
-			MidiChannel: 9,
-			BaseNote: 36),
-		new(
-			"keys-space",
-			InstrumentMode.Keyboard,
-			1,
-			"Space Keys",
-			"LX-Space.sf2",
-			"https://archive.org/download/LXSpace/LX-Space.sf2",
-			"LX-Space via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 60),
-		new(
-			"keys-piano",
-			InstrumentMode.Keyboard,
-			0,
-			"Stein Piano",
-			"WST25FStein_00Sep22.sf2",
-			"https://archive.org/download/WST25FStein_00Sep22.sf2/WST25FStein_00Sep22.sf2",
-			"WST25FStein via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 62),
-		new(
-			"keys-retro",
-			InstrumentMode.Keyboard,
-			2,
-			"JV Harpsichord",
-			"Roland JV-1080 GM.sf2",
-			"https://archive.org/download/gabedudleyssf2collection/Roland%20JV-1080%20GM.sf2",
-			"Roland JV-1080 GM via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 64,
-			ProgramNumber: 6),
-		new(
-			"chords-space",
-			InstrumentMode.Chords,
-			0,
-			"Space Chords",
-			"LX-Space.sf2",
-			"https://archive.org/download/LXSpace/LX-Space.sf2",
-			"LX-Space via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 48),
-		new(
-			"chords-zappa",
-			InstrumentMode.Chords,
-			1,
-			"Zappa Chords",
-			"ZappaKit.sf2",
-			"https://archive.org/download/ZappaKit.sf2/ZappaKit.sf2",
-			"ZappaKit via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 52),
-		new(
-			"chords-retro",
-			InstrumentMode.Chords,
-			2,
-			"Retro Synth",
-			"Retro_Synth_PC.sf2",
-			"https://archive.org/download/xmplayer.-7z/Retro_Synth_PC.sf2",
-			"Retro Synth PC via Internet Archive",
-			MidiChannel: 0,
-			BaseNote: 55),
-	];
 
 	private const int SampleRate = 44100;
 	private const int PadPressThreshold = 220;
@@ -150,15 +55,15 @@ internal sealed partial class DrumSoundfontPlayer : IDisposable
 	{
 		try
 		{
-			logger.LogInformation("Preparing instrument soundfonts (download if missing): {Count}", s_soundFontPresets.Length);
-			var resolvedPresets = await EnsureSoundFontsAsync(logger, cancellationToken).ConfigureAwait(false);
+			logger.LogInformation("Preparing instrument soundfonts (download if missing): {Count}", SoundFontLibrary.Catalogue.Length);
+			var resolvedPresets = await SoundFontLibrary.EnsureSoundFontsAsync(logger, cancellationToken).ConfigureAwait(false);
 			if (resolvedPresets.Count == 0)
 			{
 				logger.LogWarning("No soundfonts available. Demo drum kit disabled.");
 				return null;
 			}
 
-			var presetsByMode = BuildPresetsByMode(resolvedPresets);
+			var presetsByMode = SoundFontLibrary.BuildPresetsByMode(resolvedPresets);
 			if (!presetsByMode.TryGetValue(InstrumentMode.PadMode, out var padPresets) || padPresets.Count == 0)
 			{
 				logger.LogWarning("Pad mode presets are unavailable. Demo drum kit disabled.");
@@ -205,9 +110,9 @@ internal sealed partial class DrumSoundfontPlayer : IDisposable
 				preset.LocalPath);
 		}
 
-		if (resolvedPresets.Count < s_soundFontPresets.Length)
+		if (resolvedPresets.Count < SoundFontLibrary.Catalogue.Length)
 		{
-			var unavailable = s_soundFontPresets
+			var unavailable = SoundFontLibrary.Catalogue
 				.Where(p => resolvedPresets.All(r => !string.Equals(r.Preset.Id, p.Id, StringComparison.Ordinal)))
 				.Select(p => p.DisplayName)
 				.ToArray();
