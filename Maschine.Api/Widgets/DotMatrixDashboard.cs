@@ -138,11 +138,17 @@ public sealed class DotMatrixDashboard
 	}
 
 	/// <summary>
+	/// Advances animated widget state by one frame in the forward direction.
+	/// </summary>
+	/// <returns><see langword="true"/> when at least one widget state changed.</returns>
+	public bool AdvanceFrame() => AdvanceFrame(1);
+
+	/// <summary>
 	/// Advances animated widget state by one frame.
 	/// </summary>
 	/// <param name="direction">Animation direction. Positive advances forward; negative advances backward.</param>
 	/// <returns><see langword="true"/> when at least one widget state changed.</returns>
-	public bool AdvanceFrame(int direction = 1)
+	public bool AdvanceFrame(int direction)
 	{
 		if (direction == 0)
 		{

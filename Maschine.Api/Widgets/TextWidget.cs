@@ -43,6 +43,29 @@ public sealed class TextWidget : DotMatrixWidgetBase
 	public IFont? Font { get; set; }
 
 	/// <summary>
+	/// Creates a non-inverted text widget that does not scroll on overflow.
+	/// </summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="lines">Text lines to render.</param>
+	public TextWidget(string id, DisplayZone zone, IReadOnlyList<string> lines)
+		: this(id, zone, lines, TextOverflowMode.None, false)
+	{
+	}
+
+	/// <summary>
+	/// Creates a non-inverted text widget.
+	/// </summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="lines">Text lines to render.</param>
+	/// <param name="overflowMode">Overflow behavior for long lines.</param>
+	public TextWidget(string id, DisplayZone zone, IReadOnlyList<string> lines, TextOverflowMode overflowMode)
+		: this(id, zone, lines, overflowMode, false)
+	{
+	}
+
+	/// <summary>
 	/// Creates a text widget.
 	/// </summary>
 	/// <param name="id">Stable widget identifier.</param>
@@ -50,7 +73,7 @@ public sealed class TextWidget : DotMatrixWidgetBase
 	/// <param name="lines">Text lines to render.</param>
 	/// <param name="overflowMode">Overflow behavior for long lines.</param>
 	/// <param name="invert">Whether to invert widget colors.</param>
-	public TextWidget(string id, DisplayZone zone, IReadOnlyList<string> lines, TextOverflowMode overflowMode = TextOverflowMode.None, bool invert = false)
+	public TextWidget(string id, DisplayZone zone, IReadOnlyList<string> lines, TextOverflowMode overflowMode, bool invert)
 		: base(id, zone, invert)
 	{
 		Lines = lines ?? [];

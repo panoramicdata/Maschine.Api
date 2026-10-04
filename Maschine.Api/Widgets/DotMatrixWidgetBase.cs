@@ -15,12 +15,22 @@ public abstract class DotMatrixWidgetBase : IDotMatrixWidget
 	public bool Invert { get; set; }
 
 	/// <summary>
+	/// Creates a new non-inverted widget.
+	/// </summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	protected DotMatrixWidgetBase(string id, DisplayZone zone)
+		: this(id, zone, false)
+	{
+	}
+
+	/// <summary>
 	/// Creates a new widget.
 	/// </summary>
 	/// <param name="id">Stable widget identifier.</param>
 	/// <param name="zone">Widget display zone in pixels.</param>
 	/// <param name="invert">Whether to invert widget colors.</param>
-	protected DotMatrixWidgetBase(string id, DisplayZone zone, bool invert = false)
+	protected DotMatrixWidgetBase(string id, DisplayZone zone, bool invert)
 	{
 		if (string.IsNullOrWhiteSpace(id))
 		{

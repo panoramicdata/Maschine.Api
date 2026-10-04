@@ -116,7 +116,10 @@ public sealed class MaschineClient : IMaschineClient
 	public ITouchStrip TouchStrip => EnsureConnected(_touchStrip);
 
 	/// <inheritdoc/>
-	public Task ConnectAsync(CancellationToken cancellationToken = default)
+	public Task ConnectAsync() => ConnectAsync(CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task ConnectAsync(CancellationToken cancellationToken)
 	{
 		ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -245,31 +248,70 @@ public sealed class MaschineClient : IMaschineClient
 	}
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixTestPatternAsync(CancellationToken cancellationToken = default)
+	public Task SetDotMatrixTestPatternAsync() => SetDotMatrixTestPatternAsync(CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixTestPatternAsync(CancellationToken cancellationToken)
 		=> EnsureConnected(_dotMatrixDisplay).SetTestPatternAsync(cancellationToken);
 
 	/// <inheritdoc/>
-	public Task ClearDotMatrixAsync(CancellationToken cancellationToken = default)
+	public Task ClearDotMatrixAsync() => ClearDotMatrixAsync(CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task ClearDotMatrixAsync(CancellationToken cancellationToken)
 		=> EnsureConnected(_dotMatrixDisplay).ClearAsync(cancellationToken);
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixZebraLinesAsync(int phase = 0, CancellationToken cancellationToken = default)
+	public Task SetDotMatrixZebraLinesAsync() => SetDotMatrixZebraLinesAsync(0, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixZebraLinesAsync(CancellationToken cancellationToken) => SetDotMatrixZebraLinesAsync(0, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixZebraLinesAsync(int phase) => SetDotMatrixZebraLinesAsync(phase, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixZebraLinesAsync(int phase, CancellationToken cancellationToken)
 		=> EnsureConnected(_dotMatrixDisplay).SetZebraLinesAsync(phase, cancellationToken);
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixBitmapAsync(byte[] bitmap, int xOffset = 0, int yOffset = 0, CancellationToken cancellationToken = default)
+	public Task SetDotMatrixBitmapAsync(byte[] bitmap) => SetDotMatrixBitmapAsync(bitmap, 0, 0, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixBitmapAsync(byte[] bitmap, CancellationToken cancellationToken) => SetDotMatrixBitmapAsync(bitmap, 0, 0, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixBitmapAsync(byte[] bitmap, int xOffset, int yOffset) => SetDotMatrixBitmapAsync(bitmap, xOffset, yOffset, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixBitmapAsync(byte[] bitmap, int xOffset, int yOffset, CancellationToken cancellationToken)
 		=> EnsureConnected(_dotMatrixDisplay).SetBitmapAsync(bitmap, xOffset, yOffset, cancellationToken);
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, int xOffset = 0, int yOffset = 0, CancellationToken cancellationToken = default)
+	public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode) => SetDotMatrixTextAsync(lines, mode, 0, 0, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, CancellationToken cancellationToken) => SetDotMatrixTextAsync(lines, mode, 0, 0, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, int xOffset, int yOffset) => SetDotMatrixTextAsync(lines, mode, xOffset, yOffset, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixTextAsync(IReadOnlyList<string> lines, DisplayLineMode mode, int xOffset, int yOffset, CancellationToken cancellationToken)
 		=> EnsureConnected(_dotMatrixDisplay).SetTextAsync(lines, mode, xOffset, yOffset, cancellationToken);
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixDashboardAsync(DotMatrixDashboard dashboard, CancellationToken cancellationToken = default)
-		=> SetDotMatrixBitmapAsync((dashboard ?? throw new ArgumentNullException(nameof(dashboard))).BuildBitmap(), cancellationToken: cancellationToken);
+	public Task SetDotMatrixDashboardAsync(DotMatrixDashboard dashboard) => SetDotMatrixDashboardAsync(dashboard, CancellationToken.None);
 
 	/// <inheritdoc/>
-	public Task SetDotMatrixWidgetsAsync(IReadOnlyList<IDotMatrixWidget> widgets, CancellationToken cancellationToken = default)
+	public Task SetDotMatrixDashboardAsync(DotMatrixDashboard dashboard, CancellationToken cancellationToken)
+		=> SetDotMatrixBitmapAsync((dashboard ?? throw new ArgumentNullException(nameof(dashboard))).BuildBitmap(), 0, 0, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixWidgetsAsync(IReadOnlyList<IDotMatrixWidget> widgets) => SetDotMatrixWidgetsAsync(widgets, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task SetDotMatrixWidgetsAsync(IReadOnlyList<IDotMatrixWidget> widgets, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(widgets);
 		var dashboard = new DotMatrixDashboard();
@@ -282,7 +324,16 @@ public sealed class MaschineClient : IMaschineClient
 	}
 
 	/// <inheritdoc/>
-	public async Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard, int framesPerSecond = 30, CancellationToken cancellationToken = default)
+	public Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard) => RunDotMatrixDashboardLoopAsync(dashboard, 30, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard, CancellationToken cancellationToken) => RunDotMatrixDashboardLoopAsync(dashboard, 30, cancellationToken);
+
+	/// <inheritdoc/>
+	public Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard, int framesPerSecond) => RunDotMatrixDashboardLoopAsync(dashboard, framesPerSecond, CancellationToken.None);
+
+	/// <inheritdoc/>
+	public async Task RunDotMatrixDashboardLoopAsync(DotMatrixDashboard dashboard, int framesPerSecond, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(dashboard);
 		if (framesPerSecond <= 0)
@@ -297,11 +348,11 @@ public sealed class MaschineClient : IMaschineClient
 			var frame = dashboard.BuildBitmap();
 			if (previousFrame is null || !frame.AsSpan().SequenceEqual(previousFrame))
 			{
-				await SetDotMatrixBitmapAsync(frame, cancellationToken: cancellationToken).ConfigureAwait(false);
+				await SetDotMatrixBitmapAsync(frame, 0, 0, cancellationToken).ConfigureAwait(false);
 				previousFrame = frame;
 			}
 
-			dashboard.AdvanceFrame();
+			dashboard.AdvanceFrame(1);
 			await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
 		}
 	}

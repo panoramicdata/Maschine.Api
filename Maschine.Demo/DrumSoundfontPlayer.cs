@@ -32,7 +32,7 @@ internal sealed class DrumSoundfontPlayer : IDisposable
 	private InstrumentMode _activeMode;
 	private bool _disposed;
 
-	private DrumSoundfontPlayer(
+	internal DrumSoundfontPlayer(
 		ILogger logger,
 		IWavePlayer output,
 		DrumSynthWaveProvider provider,

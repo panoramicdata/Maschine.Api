@@ -9,13 +9,24 @@ namespace Maschine.Api.Widgets;
 public sealed class EqWidget : SpectrumWidget
 {
 	/// <summary>
+	/// Creates a non-inverted EQ widget.
+	/// </summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="bandLevels">Band levels normalized to 0..1.</param>
+	public EqWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels)
+		: this(id, zone, bandLevels, false)
+	{
+	}
+
+	/// <summary>
 	/// Creates an EQ widget.
 	/// </summary>
 	/// <param name="id">Stable widget identifier.</param>
 	/// <param name="zone">Widget display zone in pixels.</param>
 	/// <param name="bandLevels">Band levels normalized to 0..1.</param>
 	/// <param name="invert">Whether to invert widget colors.</param>
-	public EqWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels, bool invert = false)
+	public EqWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels, bool invert)
 		: base(id, zone, bandLevels, invert)
 	{
 	}
