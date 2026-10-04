@@ -62,9 +62,17 @@ public class SpectrumWidget : DotMatrixWidgetBase
 	public IReadOnlyList<float> PeakLevels => _peaks;
 
 	/// <summary>
+	/// Creates a non-inverted spectrum widget.
+	/// </summary>
+	public SpectrumWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels)
+		: this(id, zone, bandLevels, false)
+	{
+	}
+
+	/// <summary>
 	/// Creates a spectrum widget.
 	/// </summary>
-	public SpectrumWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels, bool invert = false)
+	public SpectrumWidget(string id, DisplayZone zone, IReadOnlyList<float> bandLevels, bool invert)
 		: base(id, zone, invert)
 	{
 		_levels = NormalizeLevels(bandLevels ?? []);

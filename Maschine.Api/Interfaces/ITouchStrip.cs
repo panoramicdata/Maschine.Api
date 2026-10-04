@@ -16,12 +16,18 @@ public interface ITouchStrip
 	/// <param name="position">Zero-based LED position (0–<see cref="MaschineDeviceConstants.MikroMk3TouchStripLedCount"/> − 1).</param>
 	/// <param name="brightness">Brightness level (0 = off, 127 = maximum).</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetLedAsync(int position, byte brightness, CancellationToken cancellationToken = default);
+	Task SetLedAsync(int position, byte brightness, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetLedAsync(int, byte, CancellationToken)"/>
+	Task SetLedAsync(int position, byte brightness) => SetLedAsync(position, brightness, CancellationToken.None);
 
 	/// <summary>Sets all touch-strip LEDs to the same brightness.</summary>
 	/// <param name="brightness">Brightness level (0 = off, 127 = maximum).</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken = default);
+	Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetAllLedsAsync(byte, CancellationToken)"/>
+	Task SetAllLedsAsync(byte brightness) => SetAllLedsAsync(brightness, CancellationToken.None);
 
 	/// <summary>
 	/// Sets the brightness of every touch-strip LED in one write.
@@ -31,7 +37,10 @@ public interface ITouchStrip
 	/// one per position (0 = off, 127 = maximum each).
 	/// </param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetLedsAsync(IReadOnlyList<byte> brightnessValues, CancellationToken cancellationToken = default);
+	Task SetLedsAsync(IReadOnlyList<byte> brightnessValues, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetLedsAsync(IReadOnlyList{byte}, CancellationToken)"/>
+	Task SetLedsAsync(IReadOnlyList<byte> brightnessValues) => SetLedsAsync(brightnessValues, CancellationToken.None);
 
 	/// <summary>
 	/// Sets the colour of every touch-strip LED in one write.
@@ -41,5 +50,8 @@ public interface ITouchStrip
 	/// one per position. Use <see cref="PadColor.Off"/> to turn an LED off.
 	/// </param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetLedsAsync(IReadOnlyList<PadColor> colors, CancellationToken cancellationToken = default);
+	Task SetLedsAsync(IReadOnlyList<PadColor> colors, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetLedsAsync(IReadOnlyList{PadColor}, CancellationToken)"/>
+	Task SetLedsAsync(IReadOnlyList<PadColor> colors) => SetLedsAsync(colors, CancellationToken.None);
 }

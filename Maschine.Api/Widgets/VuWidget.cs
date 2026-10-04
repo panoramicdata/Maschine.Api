@@ -84,6 +84,71 @@ public sealed class VuWidget : DotMatrixWidgetBase
 	/// </summary>
 	public float NeedleSweepDegrees { get; set; } = 120f;
 
+	/// <summary>Creates a VU widget at level 0 with automatic needle detail.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style)
+		: this(id, zone, style, VuNeedleDetailMode.Auto, 0f, null, false)
+	{
+	}
+
+	/// <summary>Creates a VU widget at level 0.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	/// <param name="needleDetailMode">Needle detail mode for needle rendering.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, VuNeedleDetailMode needleDetailMode)
+		: this(id, zone, style, needleDetailMode, 0f, null, false)
+	{
+	}
+
+	/// <summary>Creates a VU widget with automatic needle detail.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	/// <param name="level">Current level normalized to 0..1.</param>
+	/// <param name="peakLevel">Optional peak level normalized to 0..1.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, float level, float? peakLevel)
+		: this(id, zone, style, VuNeedleDetailMode.Auto, level, peakLevel, false)
+	{
+	}
+
+	/// <summary>Creates a VU widget with automatic needle detail.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	/// <param name="level">Current level normalized to 0..1.</param>
+	/// <param name="peakLevel">Optional peak level normalized to 0..1.</param>
+	/// <param name="invert">Whether to invert widget colors.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, float level, float? peakLevel, bool invert)
+		: this(id, zone, style, VuNeedleDetailMode.Auto, level, peakLevel, invert)
+	{
+	}
+
+	/// <summary>Creates a non-inverted VU widget.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	/// <param name="needleDetailMode">Needle detail mode for needle rendering.</param>
+	/// <param name="level">Current level normalized to 0..1.</param>
+	/// <param name="peakLevel">Optional peak level normalized to 0..1.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, VuNeedleDetailMode needleDetailMode, float level, float? peakLevel)
+		: this(id, zone, style, needleDetailMode, level, peakLevel, false)
+	{
+	}
+
+	/// <summary>Creates a VU widget with no peak marker.</summary>
+	/// <param name="id">Stable widget identifier.</param>
+	/// <param name="zone">Widget display zone in pixels.</param>
+	/// <param name="style">VU render style.</param>
+	/// <param name="needleDetailMode">Needle detail mode for needle rendering.</param>
+	/// <param name="level">Current level normalized to 0..1.</param>
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, VuNeedleDetailMode needleDetailMode, float level)
+		: this(id, zone, style, needleDetailMode, level, null, false)
+	{
+	}
+
 	/// <summary>
 	/// Creates a VU widget.
 	/// </summary>
@@ -94,7 +159,7 @@ public sealed class VuWidget : DotMatrixWidgetBase
 	/// <param name="level">Current level normalized to 0..1.</param>
 	/// <param name="peakLevel">Optional peak level normalized to 0..1.</param>
 	/// <param name="invert">Whether to invert widget colors.</param>
-	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, VuNeedleDetailMode needleDetailMode = VuNeedleDetailMode.Auto, float level = 0f, float? peakLevel = null, bool invert = false)
+	public VuWidget(string id, DisplayZone zone, VuWidgetStyle style, VuNeedleDetailMode needleDetailMode, float level, float? peakLevel, bool invert)
 		: base(id, zone, invert)
 	{
 		Style = style;

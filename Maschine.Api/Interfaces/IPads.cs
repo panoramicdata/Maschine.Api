@@ -21,10 +21,16 @@ public interface IPads
 	/// <param name="padIndex">Zero-based pad index.</param>
 	/// <param name="color">Target colour.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken = default);
+	Task SetColorAsync(int padIndex, PadColor color, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetColorAsync(int, PadColor, CancellationToken)"/>
+	Task SetColorAsync(int padIndex, PadColor color) => SetColorAsync(padIndex, color, CancellationToken.None);
 
 	/// <summary>Sets the RGB LED colour for all pads at once.</summary>
 	/// <param name="color">Target colour applied to every pad.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task SetAllColorsAsync(PadColor color, CancellationToken cancellationToken = default);
+	Task SetAllColorsAsync(PadColor color, CancellationToken cancellationToken);
+
+	/// <inheritdoc cref="SetAllColorsAsync(PadColor, CancellationToken)"/>
+	Task SetAllColorsAsync(PadColor color) => SetAllColorsAsync(color, CancellationToken.None);
 }
