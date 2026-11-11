@@ -20,7 +20,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       - name: Restore
         run: dotnet restore
@@ -74,7 +74,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       - name: Login to NuGet
         id: login
@@ -115,7 +115,7 @@ jobs:
         # it can. setup-dotnet puts this directory on PATH for the later steps.
         DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       with:
-        dotnet-version: '10.0.x'
+        dotnet-version: '11.0.x'
 
     - name: Build tests
       run: dotnet build Maschine.Api.Test/Maschine.Api.Test.csproj --configuration Debug
@@ -123,12 +123,12 @@ jobs:
     # The test project is an xunit v3 Microsoft.Testing.Platform application, so coverage is
     # collected by running it directly (Microsoft.Testing.Extensions.CodeCoverage) rather than
     # through "dotnet test". On Linux the executable has no ".exe" extension. The report is written
-    # to bin/Debug/net10.0/TestResults/coverage.cobertura.xml.
+    # to bin/Debug/net11.0/TestResults/coverage.cobertura.xml.
     #
     # CI runs every test: the Maschine.Api tests are hardware-free unit tests that need no device and
     # no credentials, so no filter is applied.
     - name: Run tests with coverage
-      working-directory: Maschine.Api.Test/bin/Debug/net10.0
+      working-directory: Maschine.Api.Test/bin/Debug/net11.0
       run: >-
         ./Maschine.Api.Test
         --coverage
@@ -143,7 +143,7 @@ jobs:
       uses: codacy/codacy-coverage-reporter-action@v1
       with:
         project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        coverage-reports: Maschine.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+        coverage-reports: Maschine.Api.Test/bin/Debug/net11.0/TestResults/coverage.cobertura.xml
 
     - name: Upload coverage artifact
       if: always()
@@ -151,5 +151,5 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: coverage
-        path: Maschine.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+        path: Maschine.Api.Test/bin/Debug/net11.0/TestResults/coverage.cobertura.xml
         retention-days: 7

@@ -91,11 +91,11 @@ internal sealed class DrumSynthWaveProvider : IWaveProvider
 		}
 	}
 
-	public int Read(byte[] buffer, int offset, int count)
+	public int Read(Span<byte> buffer)
 	{
 		try
 		{
-			var frameCount = count / BytesPerFrame;
+			var frameCount = buffer.Length / BytesPerFrame;
 			EnsureCapacity(frameCount);
 
 			float volume;
@@ -105,7 +105,7 @@ internal sealed class DrumSynthWaveProvider : IWaveProvider
 				_synthesizer.Render(_left.AsSpan(0, frameCount), _right.AsSpan(0, frameCount));
 			}
 
-			var index = offset;
+			var index = 0;
 			for (var i = 0; i < frameCount; i++)
 			{
 				WriteSample(buffer, ref index, _left[i] * volume);
@@ -130,8 +130,8 @@ internal sealed class DrumSynthWaveProvider : IWaveProvider
 
 			TryRecoverSynth(ex);
 
-			Array.Clear(buffer, offset, count);
-			return count;
+			buffer.Clear();
+			return buffer.Length;
 		}
 	}
 
@@ -175,7 +175,7 @@ internal sealed class DrumSynthWaveProvider : IWaveProvider
 		_synthesizer.ProcessMidiMessage(preset.MidiChannel, 0xC0, preset.ProgramNumber, 0);
 	}
 
-	private static void WriteSample(byte[] buffer, ref int index, float sample)
+	private static void WriteSample(Span<byte> buffer, ref int index, float sample)
 	{
 		var clamped = Math.Clamp(sample, -1F, 1F);
 		var pcm = (short)Math.Round(clamped * short.MaxValue);
