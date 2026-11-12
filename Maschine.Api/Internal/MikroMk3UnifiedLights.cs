@@ -66,13 +66,13 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 			return Task.CompletedTask;
 		}
 
-		var value = ScaleButtonBrightness(brightness);
+		var value = MikroMk3LightEncoding.ScaleButtonBrightness(brightness);
 		return WriteIfChangedAsync(report => SetSlot(report, buttonIndex, value), cancellationToken);
 	}
 
 	internal Task SetAllButtonBrightnessAsync(byte brightness, CancellationToken cancellationToken)
 	{
-		var value = ScaleButtonBrightness(brightness);
+		var value = MikroMk3LightEncoding.ScaleButtonBrightness(brightness);
 		return WriteIfChangedAsync(
 			report => SetSlots(report, FirstPadLightId, _ => value, static i => i),
 			cancellationToken);
@@ -86,7 +86,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 				$"Pad index must be 0-{MaschineDeviceConstants.MikroMk3PadCount - 1}.");
 		}
 
-		var value = EncodePadColor(color);
+		var value = MikroMk3LightEncoding.EncodePadColor(color);
 		return WriteIfChangedAsync(
 			report => SetSlot(report, s_padIndexToLightId[padIndex], value),
 			cancellationToken);
@@ -94,7 +94,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 
 	internal Task SetAllPadColorsAsync(PadColor color, CancellationToken cancellationToken)
 	{
-		var value = EncodePadColor(color);
+		var value = MikroMk3LightEncoding.EncodePadColor(color);
 		return WriteIfChangedAsync(
 			report => SetSlots(report, s_padIndexToLightId.Length, _ => value, static i => s_padIndexToLightId[i]),
 			cancellationToken);
@@ -108,7 +108,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 				$"Strip LED position must be 0–{MaschineDeviceConstants.MikroMk3TouchStripLedCount - 1}.");
 		}
 
-		var value = ScaleButtonBrightness(brightness);
+		var value = MikroMk3LightEncoding.ScaleButtonBrightness(brightness);
 		return WriteIfChangedAsync(
 			report => SetSlot(report, FirstStripLightId + position, value),
 			cancellationToken);
@@ -116,7 +116,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 
 	internal Task SetAllStripLedsAsync(byte brightness, CancellationToken cancellationToken)
 	{
-		var value = ScaleButtonBrightness(brightness);
+		var value = MikroMk3LightEncoding.ScaleButtonBrightness(brightness);
 		return WriteIfChangedAsync(
 			report => SetSlots(report, MaschineDeviceConstants.MikroMk3TouchStripLedCount, _ => value, StripSlot),
 			cancellationToken);
@@ -133,7 +133,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		}
 
 		return WriteIfChangedAsync(
-			report => SetSlots(report, brightnessValues.Count, i => ScaleButtonBrightness(brightnessValues[i]), StripSlot),
+			report => SetSlots(report, brightnessValues.Count, i => MikroMk3LightEncoding.ScaleButtonBrightness(brightnessValues[i]), StripSlot),
 			cancellationToken);
 	}
 
@@ -148,7 +148,7 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 		}
 
 		return WriteIfChangedAsync(
-			report => SetSlots(report, colors.Count, i => EncodePadColor(colors[i]), StripSlot),
+			report => SetSlots(report, colors.Count, i => MikroMk3LightEncoding.EncodePadColor(colors[i]), StripSlot),
 			cancellationToken);
 	}
 
@@ -208,90 +208,4 @@ internal sealed class MikroMk3UnifiedLights : IDisposable
 
 		return changed;
 	}
-
-	private static byte ScaleButtonBrightness(byte brightness)
-	{
-		if (brightness == 0)
-		{
-			return 0;
-		}
-		// Map brightness 1-255 to intensity 1-3; colour index 1 in high 6 bits.
-		// Thresholds are chosen so that 64/127/255 each hit a distinct level.
-		byte intensity = brightness >= 170 ? (byte)3 : brightness >= 85 ? (byte)2 : (byte)1;
-		return (byte)((1 << 2) | intensity);
-	}
-
-
-	private static byte EncodePadColor(PadColor color)
-	{
-		var r = color.R;
-		var g = color.G;
-		var b = color.B;
-
-		if (r == 0 && g == 0 && b == 0)
-		{
-			return 0;
-		}
-
-		var max = Math.Max(r, Math.Max(g, b));
-		byte intensity = max >= 171 ? (byte)2 : max >= 86 ? (byte)1 : (byte)0;
-
-		// Near-grayscale (low saturation) -> white (palette index 17).
-		var min = Math.Min(r, Math.Min(g, b));
-		var delta = max - min;
-		if (delta < max / 4)
-		{
-			return (byte)((17 << 2) | intensity);
-		}
-
-		return (byte)((HueToPaletteIndex(ComputeHueDegrees(r, g, b, max, delta)) << 2) | intensity);
-	}
-
-	/// <summary>Hue of an RGB triple in degrees, 0-360.</summary>
-	private static double ComputeHueDegrees(byte r, byte g, byte b, int max, int delta)
-	{
-		double h;
-		if (max == r)
-		{
-			h = 60.0 * ((double)(g - b) / delta % 6);
-		}
-		else if (max == g)
-		{
-			h = 60.0 * ((double)(b - r) / delta + 2);
-		}
-		else
-		{
-			h = 60.0 * ((double)(r - g) / delta + 4);
-		}
-
-		return h < 0 ? h + 360 : h;
-	}
-
-	/// <summary>
-	/// Maps a hue to the NI Mikro MK3 fixed palette indices 1-16:
-	/// 1=red, 2=orange, 3=light-orange, 4=warm-yellow, 5=yellow,
-	/// 6=lime, 7=green, 8=mint, 9=cyan, 10=turquoise, 11=blue,
-	/// 12=plum, 13=violet, 14=purple, 15=magenta, 16=fuchsia.
-	/// </summary>
-	private static byte HueToPaletteIndex(double hueDegrees)
-		=> hueDegrees switch
-		{
-			< 10 => 1,
-			< 25 => 2,
-			< 38 => 3,
-			< 52 => 4,
-			< 75 => 5,
-			< 105 => 6,
-			< 135 => 7,
-			< 165 => 8,
-			< 195 => 9,
-			< 225 => 10,
-			< 248 => 11,
-			< 263 => 12,
-			< 278 => 13,
-			< 293 => 14,
-			< 315 => 15,
-			< 350 => 16,
-			_ => 1,
-		};
 }

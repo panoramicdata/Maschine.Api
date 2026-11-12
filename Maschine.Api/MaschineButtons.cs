@@ -28,14 +28,23 @@ internal sealed partial class MaschineButtons : IButtons
 	private readonly bool[] _latchLongReleaseArmed;
 	private readonly bool[] _latchShortReleaseArmed;
 	private readonly bool _allowExternalLedOverrides;
-	private bool _buttonLedUnsupported;
 	private EncoderTouchState _lastEncoderTouch;
+	private EventHandler<KeyEvent>? _keyEvent;
+	private EventHandler<EncoderTouchState>? _encoderTouchChanged;
 
 	/// <inheritdoc/>
-	public event EventHandler<KeyEvent>? KeyEvent;
+	public event EventHandler<KeyEvent>? KeyEvent
+	{
+		add => _keyEvent += value;
+		remove => _keyEvent -= value;
+	}
 
 	/// <inheritdoc/>
-	public event EventHandler<EncoderTouchState>? EncoderTouchChanged;
+	public event EventHandler<EncoderTouchState>? EncoderTouchChanged
+	{
+		add => _encoderTouchChanged += value;
+		remove => _encoderTouchChanged -= value;
+	}
 
 	internal MaschineButtons(IHidDevice device, MikroMk3UnifiedLights unifiedLights, LedBrightnessController brightness, MaschineClientOptions options)
 	{
@@ -97,179 +106,12 @@ internal sealed partial class MaschineButtons : IButtons
 		return _states[(int)button].IsPressed;
 	}
 
-	/// <inheritdoc/>
-	public Task SetLedAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken = default)
-	{
-		ThrowIfLibraryManaged(buttonIndex);
-		SyncManagedKeyState(buttonIndex, brightness);
-		return SetLedInternalAsync(buttonIndex, brightness, cancellationToken);
-	}
-
-	private Task SetLedInternalAsync(int buttonIndex, byte brightness, CancellationToken cancellationToken)
-	{
-		var scaled = _brightness.Scale(brightness);
-		var report = MikroMk3Protocol.BuildButtonLedReport(buttonIndex, scaled);
-		return WriteSingleButtonLedReportAsync(report, buttonIndex, scaled, cancellationToken);
-	}
-
-	/// <inheritdoc/>
-	public Task SetAllLedsAsync(byte brightness, CancellationToken cancellationToken = default)
-	{
-		if (!_allowExternalLedOverrides && HasAnyLibraryManagedKeys())
-		{
-			throw new InvalidOperationException("One or more keys are in a managed key mode; individual/all-button LED writes are disabled for managed keys.");
-		}
-
-		SyncAllManagedKeyStates(brightness);
-		return SetAllLedsInternalAsync(brightness, cancellationToken);
-	}
-
-	private Task SetAllLedsInternalAsync(byte brightness, CancellationToken cancellationToken)
-	{
-		var scaled = _brightness.Scale(brightness);
-		var report = MikroMk3Protocol.BuildAllButtonLedsReport(scaled);
-		return WriteAllButtonLedsReportAsync(report, scaled, cancellationToken);
-	}
-
-	internal Task SetAllLedsForShutdownAsync(byte brightness, CancellationToken cancellationToken = default)
-		=> SetAllLedsInternalAsync(brightness, cancellationToken);
-
-	/// <inheritdoc/>
-	public Task SetOnOffAsync(int buttonIndex, bool isOn, CancellationToken cancellationToken = default)
-		=> SetLedAsync(buttonIndex, isOn ? (byte)255 : (byte)0, cancellationToken);
-
-	/// <inheritdoc/>
-	public Task SetAllOnOffAsync(bool isOn, CancellationToken cancellationToken = default)
-		=> SetAllLedsAsync(isOn ? (byte)255 : (byte)0, cancellationToken);
-
 	private static void ValidateDirectLedButton(MikroMk3Button button)
 	{
 		if (!KeyModeDefaults.IsDirectLedKey(button))
 		{
 			throw new ArgumentOutOfRangeException(nameof(button), button, "Only keys with directly-addressable LEDs are supported by the key-mode engine.");
 		}
-	}
-
-	private void ThrowIfLibraryManaged(int buttonIndex)
-	{
-		if (_allowExternalLedOverrides)
-		{
-			return;
-		}
-
-		if (buttonIndex < 0 || buttonIndex >= PhysicalButtonCount)
-		{
-			return;
-		}
-
-		if (!MikroMk3ButtonExtensions.TryFromIndex(buttonIndex, out var button) || !KeyModeDefaults.IsDirectLedKey(button))
-		{
-			return;
-		}
-
-		if (_keyModes[buttonIndex] != KeyMode.EventsOnly)
-		{
-			throw new InvalidOperationException($"LED for key '{button}' is managed by the library while mode '{_keyModes[buttonIndex]}' is active.");
-		}
-	}
-
-	private void SyncManagedKeyState(int buttonIndex, byte brightness)
-	{
-		if (!_allowExternalLedOverrides
-			|| buttonIndex < 0 || buttonIndex >= PhysicalButtonCount
-			|| !MikroMk3ButtonExtensions.TryFromIndex(buttonIndex, out _)
-			|| _keyModes[buttonIndex] == KeyMode.EventsOnly)
-		{
-			return;
-		}
-
-		_keyOnStates[buttonIndex] = brightness > 0;
-	}
-
-	private void SyncAllManagedKeyStates(byte brightness)
-	{
-		if (!_allowExternalLedOverrides)
-		{
-			return;
-		}
-
-		for (var i = 0; i < DirectLedButtonCount; i++)
-		{
-			if (_keyModes[i] != KeyMode.EventsOnly)
-			{
-				_keyOnStates[i] = brightness > 0;
-			}
-		}
-	}
-
-	private bool HasAnyLibraryManagedKeys()
-	{
-		for (var i = 0; i < DirectLedButtonCount; i++)
-		{
-			if (_keyModes[i] != KeyMode.EventsOnly)
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private async Task WriteSingleButtonLedReportAsync(byte[] report, int buttonIndex, byte brightness, CancellationToken cancellationToken)
-	{
-		if (_buttonLedUnsupported || _unifiedLights.IsEnabled)
-		{
-			await _unifiedLights.SetButtonBrightnessAsync(buttonIndex, brightness, cancellationToken)
-				.ConfigureAwait(false);
-			return;
-		}
-
-		try
-		{
-			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
-		}
-		catch (Exception ex) when (IsUnsupportedButtonLedError(ex))
-		{
-			_buttonLedUnsupported = true;
-			_unifiedLights.Enable();
-			await _unifiedLights.SetButtonBrightnessAsync(buttonIndex, brightness, cancellationToken)
-				.ConfigureAwait(false);
-		}
-	}
-
-	private async Task WriteAllButtonLedsReportAsync(byte[] report, byte brightness, CancellationToken cancellationToken)
-	{
-		if (_buttonLedUnsupported || _unifiedLights.IsEnabled)
-		{
-			await _unifiedLights.SetAllButtonBrightnessAsync(brightness, cancellationToken).ConfigureAwait(false);
-			return;
-		}
-
-		try
-		{
-			await _device.WriteAsync(report, cancellationToken).ConfigureAwait(false);
-		}
-		catch (Exception ex) when (IsUnsupportedButtonLedError(ex))
-		{
-			_buttonLedUnsupported = true;
-			_unifiedLights.Enable();
-			await _unifiedLights.SetAllButtonBrightnessAsync(brightness, cancellationToken).ConfigureAwait(false);
-		}
-	}
-
-	private static bool IsUnsupportedButtonLedError(Exception ex)
-	{
-		for (Exception? current = ex; current is not null; current = current.InnerException)
-		{
-			var message = current.Message;
-			if (message.Contains("parameter is incorrect", StringComparison.OrdinalIgnoreCase)
-				|| message.Contains("SetFeature failed", StringComparison.OrdinalIgnoreCase))
-			{
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/// <summary>
@@ -321,7 +163,10 @@ internal sealed partial class MaschineButtons : IButtons
 		if (touch != _lastEncoderTouch)
 		{
 			_lastEncoderTouch = touch;
-			EncoderTouchChanged?.Invoke(this, touch);
+			_encoderTouchChanged?.Invoke(this, touch);
 		}
 	}
+
+	private void EmitKeyEvent(MikroMk3Button button, KeyEventType type, bool isPressed, bool isOn)
+		=> _keyEvent?.Invoke(this, new KeyEvent(button, type, isPressed, isOn));
 }

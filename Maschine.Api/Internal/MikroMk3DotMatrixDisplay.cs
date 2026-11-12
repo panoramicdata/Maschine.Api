@@ -44,18 +44,10 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 	}
 
 	internal Task ClearAsync(CancellationToken cancellationToken)
-	{
-		var top = new byte[PixelCountPerSection];
-		var bottom = new byte[PixelCountPerSection];
-		return WriteSectionsAsync(top, bottom, cancellationToken);
-	}
+		=> WriteSectionsAsync(new byte[PixelCountPerSection], new byte[PixelCountPerSection], cancellationToken);
 
 	internal Task ClearWithFallbackAsync(CancellationToken cancellationToken)
-	{
-		var top = new byte[PixelCountPerSection];
-		var bottom = new byte[PixelCountPerSection];
-		return WriteSectionsWithFallbackAsync(top, bottom, cancellationToken);
-	}
+		=> WriteSectionsWithFallbackAsync(new byte[PixelCountPerSection], new byte[PixelCountPerSection], cancellationToken);
 
 	internal Task SetZebraLinesAsync(CancellationToken cancellationToken)
 		=> SetZebraLinesAsync(0, cancellationToken);
@@ -110,7 +102,13 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		return WriteSectionsAsync(top, bottom, cancellationToken);
 	}
 
-	private async Task WriteSectionsAsync(byte[] topPixels, byte[] bottomPixels, CancellationToken cancellationToken)
+	private Task WriteSectionsAsync(byte[] topPixels, byte[] bottomPixels, CancellationToken cancellationToken)
+		=> WriteSectionsCoreAsync(topPixels, bottomPixels, withFeatureFallback: false, cancellationToken);
+
+	private Task WriteSectionsWithFallbackAsync(byte[] topPixels, byte[] bottomPixels, CancellationToken cancellationToken)
+		=> WriteSectionsCoreAsync(topPixels, bottomPixels, withFeatureFallback: true, cancellationToken);
+
+	private async Task WriteSectionsCoreAsync(byte[] topPixels, byte[] bottomPixels, bool withFeatureFallback, CancellationToken cancellationToken)
 	{
 		if (topPixels.Length != PixelCountPerSection)
 		{
@@ -130,6 +128,11 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 
 			await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
 			await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
+
+			if (withFeatureFallback)
+			{
+				await WriteFeatureFallbackAsync(top, bottom, cancellationToken).ConfigureAwait(false);
+			}
 		}
 		finally
 		{
@@ -137,45 +140,21 @@ internal sealed class MikroMk3DotMatrixDisplay : IDisposable
 		}
 	}
 
-	private async Task WriteSectionsWithFallbackAsync(byte[] topPixels, byte[] bottomPixels, CancellationToken cancellationToken)
+	// Some firmware revisions are more reliable when a mirrored feature write is sent on shutdown.
+	private async Task WriteFeatureFallbackAsync(byte[] top, byte[] bottom, CancellationToken cancellationToken)
 	{
-		if (topPixels.Length != PixelCountPerSection)
-		{
-			throw new ArgumentException($"Top section must be {PixelCountPerSection} bytes.", nameof(topPixels));
-		}
-
-		if (bottomPixels.Length != PixelCountPerSection)
-		{
-			throw new ArgumentException($"Bottom section must be {PixelCountPerSection} bytes.", nameof(bottomPixels));
-		}
-
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			var top = BuildPacket(s_topHeader, ApplyDisplayPolarity(topPixels));
-			var bottom = BuildPacket(s_bottomHeader, ApplyDisplayPolarity(bottomPixels));
-
-			await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
-			await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
-
-			// Some firmware revisions are more reliable when a mirrored feature write is sent on shutdown.
-			try
-			{
-				await _device.WriteFeatureAsync(top, cancellationToken).ConfigureAwait(false);
-				await _device.WriteFeatureAsync(bottom, cancellationToken).ConfigureAwait(false);
-			}
-			catch
-			{
-				// Best-effort fallback only.
-			}
-
-			await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
-			await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
+			await _device.WriteFeatureAsync(top, cancellationToken).ConfigureAwait(false);
+			await _device.WriteFeatureAsync(bottom, cancellationToken).ConfigureAwait(false);
 		}
-		finally
+		catch
 		{
-			_gate.Release();
+			// Best-effort fallback only.
 		}
+
+		await _device.WriteAsync(top, cancellationToken).ConfigureAwait(false);
+		await _device.WriteAsync(bottom, cancellationToken).ConfigureAwait(false);
 	}
 
 	private static byte[] BuildPacket(byte[] header, byte[] pixels)

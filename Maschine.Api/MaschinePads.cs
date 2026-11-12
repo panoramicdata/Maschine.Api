@@ -12,9 +12,14 @@ internal sealed class MaschinePads : IPads
 	private readonly IHidDevice _device;
 	private readonly MikroMk3UnifiedLights _unifiedLights;
 	private readonly PadState[] _states;
+	private EventHandler<PadState>? _padChanged;
 
 	/// <inheritdoc/>
-	public event EventHandler<PadState>? PadChanged;
+	public event EventHandler<PadState>? PadChanged
+	{
+		add => _padChanged += value;
+		remove => _padChanged -= value;
+	}
 
 	internal MaschinePads(IHidDevice device, MikroMk3UnifiedLights unifiedLights)
 	{
@@ -77,7 +82,7 @@ internal sealed class MaschinePads : IPads
 		if (i >= 0 && i < _states.Length && _states[i].Pressure != newState.Pressure)
 		{
 			_states[i] = newState;
-			PadChanged?.Invoke(this, _states[i]);
+			_padChanged?.Invoke(this, _states[i]);
 		}
 	}
 }

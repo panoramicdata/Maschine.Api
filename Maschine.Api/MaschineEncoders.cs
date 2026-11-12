@@ -12,9 +12,14 @@ internal sealed class MaschineEncoders : IEncoders
 	private const int TouchStripEncoderIndex = 8;
 	private byte? _lastTouchStripAbsolute;
 	private byte? _lastTouchStripButtonAbsolute;
+	private EventHandler<EncoderDelta>? _encoderChanged;
 
 	/// <inheritdoc/>
-	public event EventHandler<EncoderDelta>? EncoderChanged;
+	public event EventHandler<EncoderDelta>? EncoderChanged
+	{
+		add => _encoderChanged += value;
+		remove => _encoderChanged -= value;
+	}
 
 	/// <summary>
 	/// Applies a 0x02 input report to the touch-strip decoder.
@@ -56,7 +61,7 @@ internal sealed class MaschineEncoders : IEncoders
 		_lastTouchStripAbsolute = current;
 
 		// Scale to keep existing demo thresholds responsive.
-		EncoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, WrapDelta(current - previous) * 16));
+		_encoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, WrapDelta(current - previous) * 16));
 	}
 
 	/// <summary>
@@ -113,6 +118,6 @@ internal sealed class MaschineEncoders : IEncoders
 		}
 
 		_lastTouchStripButtonAbsolute = current;
-		EncoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, delta));
+		_encoderChanged?.Invoke(this, new EncoderDelta(TouchStripEncoderIndex, delta));
 	}
 }

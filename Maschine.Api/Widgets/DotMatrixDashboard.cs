@@ -18,16 +18,26 @@ public sealed class DotMatrixDashboard
 
 	private readonly List<IDotMatrixWidget> _widgets = [];
 
+	private EventHandler<IDotMatrixWidget>? _widgetAdded;
+	private EventHandler<IDotMatrixWidget>? _widgetUpdated;
+	private EventHandler<IDotMatrixWidget>? _widgetRemoved;
+	private EventHandler? _widgetsCleared;
+	private EventHandler? _rendered;
+
 	/// <summary>Raised when a widget is added.</summary>
-	public event EventHandler<IDotMatrixWidget>? WidgetAdded;
+	public event EventHandler<IDotMatrixWidget>? WidgetAdded { add => _widgetAdded += value; remove => _widgetAdded -= value; }
+
 	/// <summary>Raised when a widget is updated or reordered.</summary>
-	public event EventHandler<IDotMatrixWidget>? WidgetUpdated;
+	public event EventHandler<IDotMatrixWidget>? WidgetUpdated { add => _widgetUpdated += value; remove => _widgetUpdated -= value; }
+
 	/// <summary>Raised when a widget is removed.</summary>
-	public event EventHandler<IDotMatrixWidget>? WidgetRemoved;
+	public event EventHandler<IDotMatrixWidget>? WidgetRemoved { add => _widgetRemoved += value; remove => _widgetRemoved -= value; }
+
 	/// <summary>Raised when all widgets are cleared.</summary>
-	public event EventHandler? WidgetsCleared;
+	public event EventHandler? WidgetsCleared { add => _widgetsCleared += value; remove => _widgetsCleared -= value; }
+
 	/// <summary>Raised after a bitmap is composed.</summary>
-	public event EventHandler? Rendered;
+	public event EventHandler? Rendered { add => _rendered += value; remove => _rendered -= value; }
 
 	/// <summary>Current widget stack in render order.</summary>
 	public IReadOnlyList<IDotMatrixWidget> Widgets => _widgets;
@@ -48,7 +58,7 @@ public sealed class DotMatrixDashboard
 		}
 
 		_widgets.Add(widget);
-		WidgetAdded?.Invoke(this, widget);
+		_widgetAdded?.Invoke(this, widget);
 	}
 
 	/// <summary>
@@ -67,7 +77,7 @@ public sealed class DotMatrixDashboard
 		update(widget);
 		ValidateZone(widget.Zone);
 		EnsureNoOverlap(widget);
-		WidgetUpdated?.Invoke(this, widget);
+		_widgetUpdated?.Invoke(this, widget);
 	}
 
 	/// <summary>
@@ -85,7 +95,7 @@ public sealed class DotMatrixDashboard
 
 		var removed = _widgets[index];
 		_widgets.RemoveAt(index);
-		WidgetRemoved?.Invoke(this, removed);
+		_widgetRemoved?.Invoke(this, removed);
 		return true;
 	}
 
@@ -100,7 +110,7 @@ public sealed class DotMatrixDashboard
 		}
 
 		_widgets.Clear();
-		WidgetsCleared?.Invoke(this, EventArgs.Empty);
+		_widgetsCleared?.Invoke(this, EventArgs.Empty);
 	}
 
 	/// <summary>
@@ -133,7 +143,7 @@ public sealed class DotMatrixDashboard
 			DotMatrixRenderer.RenderWidget(bitmap, widget);
 		}
 
-		Rendered?.Invoke(this, EventArgs.Empty);
+		_rendered?.Invoke(this, EventArgs.Empty);
 		return bitmap;
 	}
 
@@ -187,7 +197,7 @@ public sealed class DotMatrixDashboard
 		var item = _widgets[oldIndex];
 		_widgets.RemoveAt(oldIndex);
 		_widgets.Insert(newIndex, item);
-		WidgetUpdated?.Invoke(this, item);
+		_widgetUpdated?.Invoke(this, item);
 	}
 
 	private static void ValidateZone(DisplayZone zone)

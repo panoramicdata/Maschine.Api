@@ -117,7 +117,7 @@ internal sealed partial class DemoController : IAsyncDisposable
 		_padDown = new bool[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastPadDownUtc = new DateTime[MaschineDeviceConstants.MikroMk3PadCount];
 		_lastEncoderLogUtc = new DateTime[MaschineDeviceConstants.MikroMk3EncoderCount];
-		_dashboards = BuildDashboards();
+		_dashboards = DemoDashboards.Build();
 	}
 
 	// ── Public API ──────────────────────────────────────────────────────────
