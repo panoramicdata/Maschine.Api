@@ -36,7 +36,7 @@ internal static class DemoDashboards
 				Title("title", "Dashboard Overview", TextOverflowMode.Ellipsis),
 				Text("sub", new DisplayZone(0, 8, 128, 8), ["Knob picks dashboard"], TextOverflowMode.Scroll, TextFontKind.Proportional8, 1, 4),
 				Spectrum("eq", new DisplayZone(0, 16, 64, 16), [0.1f, 0.5f, 0.8f, 0.4f, 0.6f, 0.2f, 0.9f, 0.3f], new SpectrumTuning(0, 10, 0.02f, 0.65f, 0.2f)),
-				Bar("vu", new DisplayZone(64, 16, 64, 16), 0.6f, 0.8f, false, new VuTuning(10, 0.02f, 0.65f, 0.2f))),
+				Bar("vu", new DisplayZone(64, 16, 64, 16), 0.6f, 0.8f, false, new VuTuning(10, 0.02f, 0.65f))),
 			Compose(
 				Text("header", new DisplayZone(0, 0, 128, 16), ["Status", "Buttons Pads Encoders"], TextOverflowMode.Ellipsis, TextFontKind.Proportional8),
 				Text("ticker", new DisplayZone(0, 16, 128, 16), ["Widgets render inside Dashboards with no overlap allowed"], TextOverflowMode.Scroll, TextFontKind.Proportional12, 2, 5)),
@@ -44,9 +44,9 @@ internal static class DemoDashboards
 			BuildMix("B", 2),
 			Compose(
 				Title("title", "Levels", TextOverflowMode.None),
-				Bar("top", new DisplayZone(0, 8, 128, 8), 0.35f, 0.5f),
+				Bar("top", new DisplayZone(0, 8, 128, 8), 0.35f, 0.5f, false),
 				Bar("mid", new DisplayZone(0, 16, 128, 8), 0.65f, 0.8f, true),
-				Bar("low", new DisplayZone(0, 24, 128, 8), 0.9f, 1.0f)),
+				Bar("low", new DisplayZone(0, 24, 128, 8), 0.9f, 1.0f, false)),
 			Compose(
 				Title("title", "Spectrum", TextOverflowMode.None),
 				Spectrum("bands", new DisplayZone(0, 8, 128, 24), [0.05f, 0.12f, 0.20f, 0.35f, 0.50f, 0.75f, 0.95f, 0.85f, 0.65f, 0.45f, 0.30f, 0.18f, 0.10f, 0.06f], new SpectrumTuning(1, 14, 0.015f, 0.7f, 0.15f))),
@@ -92,7 +92,7 @@ internal static class DemoDashboards
 			ScrollPadding = padding ?? 3,
 		};
 
-	private static VuWidget Bar(string id, DisplayZone zone, float level, float peak, bool invert = false, VuTuning? tuning = null)
+	private static VuWidget Bar(string id, DisplayZone zone, float level, float peak, bool invert, VuTuning? tuning = null)
 	{
 		var t = tuning ?? new VuTuning(8, 0.03f);
 		return new(id, zone, VuWidgetStyle.Bar, level, peak, invert)
@@ -100,7 +100,7 @@ internal static class DemoDashboards
 			PeakHoldFrames = t.HoldFrames,
 			PeakDecayPerFrame = t.DecayPerFrame,
 			ResponseRise = t.Rise,
-			ResponseFall = t.Fall,
+			ResponseFall = 0.2f,
 		};
 	}
 
@@ -124,7 +124,7 @@ internal static class DemoDashboards
 			ResponseFall = tuning.Fall,
 		};
 
-	private readonly record struct VuTuning(int HoldFrames, float DecayPerFrame, float Rise = 0.6f, float Fall = 0.2f);
+	private readonly record struct VuTuning(int HoldFrames, float DecayPerFrame, float Rise = 0.6f);
 
 	private readonly record struct NeedleTuning(float StartDegrees, float SweepDegrees, int HoldFrames, float DecayPerFrame);
 
