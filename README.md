@@ -7,6 +7,8 @@
 A .NET library for interacting with Native Instruments Maschine controllers over USB HID.
 Currently targets the **Maschine Mikro MK3** (VID `0x17CC` / PID `0x1700`).
 
+Supports .NET 11.0.
+
 ## Features
 
 - Full HID communication via [HidSharp](https://www.zer7.com/software/hidsharp)
@@ -62,7 +64,7 @@ await client.DisconnectAsync();
 
 ## Requirements
 
-- .NET 10.0 or later
+- .NET 11.0 or later
 - Windows, macOS, or Linux (HidSharp cross-platform)
 - Native Instruments USB driver (Windows) or libusb/hidraw (Linux)
 
